@@ -1,6 +1,4 @@
 
-import networkx
-
 import parsec as P
 
 
