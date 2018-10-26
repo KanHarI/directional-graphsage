@@ -131,3 +131,8 @@ class LstmReluGraphSage(DirectionalGraphSage):
 			saggregator,
 			node_transformer,
 			edge_transformer)
+
+		self.node_transformer_l = node_transformer_l
+		self.edge_transformer_l = edge_transformer_l
+		self.node_pretrans_l = node_pretrans_l
+		self.edge_pretrans_l = edge_pretrans_l
