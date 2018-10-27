@@ -28,12 +28,12 @@ class DirectionalGraphSage(nn.Module):
 	# node_transformer - accepts a representation of all predecessors and all
 	# 					successors of current node, and calculates the
 	# 					representation of the next layer
-	# node_transformer: (3, INTERNAL_SIZE) -> (OUT_NODE_SIZE)
+	# node_transformer: (3, INTERNAL_SIZE) -> (INTERNAL_SIZE)
 	# node_transformer: [pred_line, curr_line, successor_line] -> out_node_representation
 	#
-	# edge_transformer: (3, INTERNAL_SIZE) -> (OUT_EDGE_SIZE)
+	# edge_transformer: (3, INTERNAL_SIZE) -> (INTERNAL_SIZE)
 	# edge_transformer: [src_node, edge, dst_node] -> out_edge_representation
-	def __init__(self, node_pretrans, edge_pretrans, paggregator, saggregator, node_transformer, edge_transformer):
+	def __init__(self, node_pretrans, edge_pretrans, paggregator, saggregator, node_transformer, edge_transformer, depth=1):
 		super().__init__()
 		self.node_pretrans = node_pretrans
 		self.edge_pretrans = edge_pretrans
@@ -41,6 +41,7 @@ class DirectionalGraphSage(nn.Module):
 		self.saggregator = saggregator
 		self.node_transformer = node_transformer
 		self.edge_transformer = edge_transformer
+		self.depth = depth
 
 	# Transforms the nodes and edges via the pretrans translator
 	def pretrans(self, graph):
@@ -67,23 +68,28 @@ class DirectionalGraphSage(nn.Module):
 
 	def forward(self, graph):
 		newgraph = self.pretrans(graph)
-		for node_label in newgraph.nodes:
-			predecessors, successors = self.get_preds_succs(newgraph, node_label)
-			predecessors = self.paggregator(predecessors)
-			successors = self.saggregator(successors)
-			newgraph.node[node_label]['vec'] = self.node_transformer(
-				torch.stack(
-					[predecessors,
-					newgraph.node[node_label]['pretrans'],
-					successors])
-				)
-		for edge in newgraph.edges:
-			newgraph[edge[0]][edge[1]]['vec'] = self.edge_transformer(
-				torch.stack(
-					[newgraph.node[edge[0]]['pretrans'],
-					newgraph[edge[0]][edge[1]]['pretrans'],
-					newgraph.node[edge[1]]['pretrans']])
-				)
+		for repeat in range(self.depth):
+			for node_label in newgraph.nodes:
+				predecessors, successors = self.get_preds_succs(newgraph, node_label)
+				predecessors = self.paggregator(predecessors)
+				successors = self.saggregator(successors)
+				newgraph.node[node_label]['vec'] = self.node_transformer(
+					torch.stack(
+						[predecessors,
+						newgraph.node[node_label]['pretrans'],
+						successors])
+					)
+			for edge in newgraph.edges:
+				newgraph[edge[0]][edge[1]]['vec'] = self.edge_transformer(
+					torch.stack(
+						[newgraph.node[edge[0]]['pretrans'],
+						newgraph[edge[0]][edge[1]]['pretrans'],
+						newgraph.node[edge[1]]['pretrans']])
+					)
+			for node_label in newgraph.nodes:
+				newgraph.node[node_label]['pretrans'] = newgraph.node[node_label]['vec']
+			for edge in newgraph.edges:
+				newgraph[edge[0]][edge[1]]['pretrans'] = newgraph[edge[0]][edge[1]]['vec']
 		return newgraph
 
 class LstmAggregator(nn.Module):

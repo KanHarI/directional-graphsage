@@ -1,6 +1,8 @@
 
 import parsec as P
 
+import networkx
+
 
 @P.generate
 def num_i():
@@ -76,6 +78,15 @@ class SdfMolecule:
 		self.atoms = atoms
 		self.bonds = bonds
 		self.value = value
+
+	def get_value(self):
+		return [1,0] if self.value>0 else [0,1]
+
+	def get_graph(self, atom_to_vec):
+		index = 0
+		g = networkx.DiGraph()
+		for atom in self.atoms:
+			a.atom
 
 @P.generate
 def sdf_molecule():
