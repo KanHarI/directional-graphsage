@@ -15,4 +15,3 @@ class SdfModel(nn.Module):
 	def __init__(self):
 		self.input_node_size = atom_dim
 		self.input_edge_size = 1 # bond type
-		pass
