@@ -70,6 +70,7 @@ def sdf_bond():
 	yield P.times(seperator >> num_i, 3)
 	return SdfBond(fst, snd, bond_type)
 
+
 class SdfMolecule:
 	def __init__(self, header, atoms, bonds, value):
 		self.header = header
@@ -77,8 +78,6 @@ class SdfMolecule:
 		self.bonds = bonds
 		self.value = value
 
-	def get_value(self):
-		return [1,0] if self.value>0 else [0,1]
 
 @P.generate
 def sdf_molecule():
