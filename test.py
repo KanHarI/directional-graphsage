@@ -6,6 +6,7 @@ import torch
 import networkx
 
 import sdf_loader
+import sdf_model
 
 
 TEST_SET = "145total-connect.sdf"
@@ -21,14 +22,8 @@ TRAINING_SETS = ["1total-connect.sdf",
 
 
 def main():
-	atoms = set()
-	all_sets = TRAINING_SETS + [TEST_SET]
-	for file_name in map(lambda x: "NCI_full\\"+x, all_sets):
-		sdf = sdf_loader.SdfFile(file_name)
-		for molecule in sdf.molecules:
-			for atom in molecule.atoms:
-				atoms.add(atom.symb)
-	print(atoms)
+	train_sets = map(lambda x: "NCI_full\\" + x, TRAINING_SETS)
+	sdf_model.train(train_sets, 1000)
 	
 if __name__ == "__main__":
 	main()
