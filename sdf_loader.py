@@ -28,17 +28,20 @@ class SdfHeader:
 @P.generate
 def sdf_header():
 	mol_num = yield transparent >> num_i
-	atom_num = yield seperator >> num_i
-	bond_num = yield seperator >> num_i
+	atom_num = yield P.string('\n\n\n') >> P.times(P.one_of(' 0123456789'), 3)
+	atom_num = int(''.join(atom_num))
+	bond_num = yield P.times(P.one_of(' 0123456789'), 3)
+	bond_num = int(''.join(bond_num))
 	yield P.times(seperator >> num_i, 5)
 	yield seperator >> P.string("V2000")
 	return SdfHeader(mol_num, atom_num, bond_num)
 
 @P.generate
 def num_f():
+	sgn = yield P.many(P.one_of('-'))
 	tmp_1 = yield P.many(P.digit())
 	tmp_2 = yield P.string('.') >> P.many(P.digit())
-	return float(''.join(['0']+tmp_1+['.']+tmp_2+['0']))
+	return float(''.join(sgn+['0']+tmp_1+['.']+tmp_2+['0']))
 
 class SdfAtom:
 	def __init__(self, symb, dd, ccc):
@@ -64,8 +67,10 @@ class SdfBond:
 
 @P.generate
 def sdf_bond():
-	fst = yield seperator >> num_i
-	snd = yield seperator >> num_i
+	fst = yield P.string('\n') >> P.times(P.one_of(' 0123456789'), 3)
+	fst = int(''.join(fst))
+	snd = yield P.times(P.one_of(' 0123456789'), 3)
+	snd = int(''.join(snd))
 	bond_type = yield seperator >> num_i
 	yield P.times(seperator >> num_i, 3)
 	return SdfBond(fst, snd, bond_type)
@@ -79,7 +84,7 @@ class SdfMolecule:
 		self.value = value
 
 
-@P.generate
+@P.generate	
 def sdf_molecule():
 	header = yield sdf_header
 	atoms = yield P.times(sdf_atom, header.atom_num)

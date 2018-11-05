@@ -1,6 +1,4 @@
 
-import networkx
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -87,11 +85,17 @@ class SdfModel(nn.Module):
 		inp = F.elu_(self.final_layer_1(inp))
 		return self.final_layer_2(inp)
 
-def train(file_names, epochs):
+def train(file_names, epochs, test_files):
 	sdf_model = SdfModel()
 
 	trainloader = torch.utils.data.DataLoader(
 		MoleculeDataset(file_names),
+		batch_size=128,
+		shuffle=True,
+		num_workers=4)
+
+	testloader = torch.utils.data.DataLoader(
+		MoleculeDataset(test_files),
 		batch_size=128,
 		shuffle=True,
 		num_workers=4)
@@ -117,7 +121,34 @@ def train(file_names, epochs):
 	
 			# print statistics
 			running_loss += loss.item()
-			if i == 5: # Print the 5th mini-batch of every epoch
+			if i == 0 and epoch > 1: # Print at the beginning of every batch after the first
 				print('[%d, %5d] loss: %f' %
 					  (epoch + 1, i + 1, running_loss))
 				running_loss = 0.0
+
+		optimizer.zero_grad()
+		true_positives = 0
+		true_negatives = 0
+		false_positives = 0
+		false_negatives = 0
+
+		for i, data in enumerate(testloader):
+			nodes, adjs, labels = data
+			outputs = sdf_model((nodes, adjs))
+			for j in range(outputs.shape[0]):
+				if outputs[j][0] > outputs[j][1]:
+					if labels[j] == 0:
+						true_positives += 1
+					else:
+						false_negatives += 1
+				else:
+					if labels[j] == 0:
+						false_positives += 1
+					else:
+						true_negatives += 1
+		print("true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d" % (true_positives, true_negatives, false_positives, false_negatives))
+		optimizer.zero_grad()
+
+
+
+
