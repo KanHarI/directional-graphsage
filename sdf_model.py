@@ -20,6 +20,11 @@ MAX_MOLECULE_SIZE = 100
 def mol_to_graph(molecule):
 	node_vals = torch.zeros((MAX_MOLECULE_SIZE, atom_dim), dtype=torch.float32)
 	for i in range(len(molecule.atoms)):
+		# An atom is represented as:
+		#        atom_type('C')   mass charge
+		#            |              |   /
+		#            V              V  V 
+		# [0,0,...,0,1,0,0...0,0,0,dd,ccc]
 		node_vals[i, atoms_dict[molecule.atoms[i].symb]] = 1
 		node_vals[i, atom_dim-2] = molecule.atoms[i].dd # mass delta
 		node_vals[i, atom_dim-1] = molecule.atoms[i].ccc # charge delta
@@ -27,13 +32,17 @@ def mol_to_graph(molecule):
 	adj_matrix = torch.zeros((MAX_MOLECULE_SIZE,MAX_MOLECULE_SIZE), dtype=torch.float32)
 	for bond in molecule.bonds:
 		a,b = molecule.atoms[bond.fst-1], molecule.atoms[bond.snd-1]
+		# bond.bond_type is 1,2,3... for single, double, triple... bond
+		# If both atoms are carbon or neither of them, the edge is bidirectional
+		# If one atom is carbon, the connection is directional from it to the 
+		# second atom
 		if (a.symb == 'C') == (b.symb == 'C'):
-			adj_matrix[bond.fst-1, bond.snd-1] = bond.bond_type/2 # 1,2,3... for single, double, triple...
-			adj_matrix[bond.snd-1, bond.fst-1] = bond.bond_type/2 # halving to preserve the same average
-			continue												# degree between different bonds
-		if (a.symb == 'C'): # prefer "outbound" connection from carbon atoms
-			adj_matrix[bond.fst-1, bond.snd-1] = bond.bond_type # as a way to give the network
-			continue											# more information (directionality)
+			adj_matrix[bond.fst-1, bond.snd-1] = bond.bond_type/2 # halving to preserve the same average
+			adj_matrix[bond.snd-1, bond.fst-1] = bond.bond_type/2 # degree between nodes
+			continue
+		if (a.symb == 'C'):
+			adj_matrix[bond.fst-1, bond.snd-1] = bond.bond_type
+			continue
 		adj_matrix[bond.snd-1, bond.fst-1] = bond.bond_type
 	
 	return node_vals, adj_matrix
@@ -51,10 +60,12 @@ class MoleculeDataset(data.Dataset):
 		return len(self.molecules)
 
 	def __getitem__(self, idx):
+		# A tuple of (node, adjacency matrix, value)
 		return self.molecules[idx][0], self.molecules[idx][1], self.vals[idx]
 
 
 INTERMEDIATE_LAYER_SIZE = 10
+# Pyramid with 7 layers
 NUM_LAYERS = 7
 
 class SdfModel(nn.Module):
@@ -67,7 +78,10 @@ class SdfModel(nn.Module):
 	def forward(self, nodes_adj):
 		nodes = self.network(nodes_adj)
 
-		# Extracting macro features from nodes
+		# Extracting macro features from nodes via taking the 
+		# min, max, mean and sum alongst every direction.
+		# This is required because of the graph features being on a 
+		# per-node basis.
 		mx, mn, av, sm = torch.max(nodes, 1), torch.min(nodes, 1), torch.mean(nodes, 1), torch.sum(nodes, 1)
 		inp = torch.cat((mx[0], mn[0], av, sm), 1)
 		inp = F.elu_(self.final_layer_1(inp))

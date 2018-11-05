@@ -11,6 +11,17 @@ import copy
 
 class GraphSageLayer(nn.Module):
 	def __init__(self, input_dim, output_dim, representation_size):
+		# input_dim: size of vector representation of incoming nodes
+		# output_dim: size of node output dimension per node
+		# representation_size: size of internal hidden layers
+		#
+		#
+		#			    --find all incoming edges -> in_to_representation of source nodes--
+		#			   /																   \
+		# input_nodes -----node_to_rep-----------------------------------------------------CONCAT---node_update
+		#			   \																   /
+		#			    --find all outgoing edges -> out_to_representation of source nodes-
+		#
 		super().__init__()
 		self.input_dim = input_dim
 		self.output_dim = output_dim
@@ -23,16 +34,14 @@ class GraphSageLayer(nn.Module):
 		# graph_nodes_batch: (batch, node, vector)
 		# graph_adj_batch: (batch, node^2)
 		# graph_adj_batch is a directional adjacency matrix, can accept non-binary inputs
-		graph_nodes_batch = nodes_adj[0]
-		graph_adj_batch = nodes_adj[1]
-		in_node_representation = F.elu_(self.in_to_representation(graph_nodes_batch))
-		out_node_representation = F.elu_(self.out_to_representation(graph_nodes_batch))
-		node_id_rep = F.elu_(self.node_to_rep(graph_nodes_batch))
+		in_node_representation = F.elu_(self.in_to_representation(nodes_adj[0]))
+		out_node_representation = F.elu_(self.out_to_representation(nodes_adj[0]))
+		node_id_rep = F.elu_(self.node_to_rep(nodes_adj[0]))
 
 		# Aggregation may replaced by smarter aggregation in the future.
 		# For now it is sum for simplicity and efficiency.
-		in_aggregated = torch.einsum('bjv,bij->biv', (in_node_representation, graph_adj_batch))
-		out_aggregated = torch.einsum('biv,bij->bjv', (out_node_representation, graph_adj_batch))
+		in_aggregated = torch.einsum('bjv,bij->biv', (in_node_representation, nodes_adj[1]))
+		out_aggregated = torch.einsum('biv,bij->bjv', (out_node_representation, nodes_adj[1]))
 		
 		update_src = torch.cat((in_aggregated, node_id_rep, out_aggregated), dim=2)
 		return torch.tanh(self.node_update(update_src))
@@ -77,6 +86,7 @@ class PyramidGraphSage(nn.Module):
 				stashed_results.append(fpass_graph)
 				fpass_graph = self.layers[i]((fpass_graph, adj))
 			else:
+				# Concatenate skip connection inputs for pyramid "downward slope"
 				fpass_graph = torch.cat((fpass_graph, stashed_results[self.num_layers-i-1]), dim=2)
 				fpass_graph = self.layers[i]((fpass_graph, adj))
 		return fpass_graph
