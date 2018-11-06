@@ -32,9 +32,9 @@ class GraphSageLayer(nn.Module):
 		# graph_nodes_batch: (batch, node, vector)
 		# graph_adj_batch: (batch, node^2)
 		# graph_adj_batch is a directional adjacency matrix, can accept non-binary inputs
-		in_node_representation = F.elu_(self.in_to_representation(nodes_adj[0]))
-		out_node_representation = F.elu_(self.out_to_representation(nodes_adj[0]))
-		node_id_rep = F.elu_(self.node_to_rep(nodes_adj[0]))
+		in_node_representation = F.relu(self.in_to_representation(nodes_adj[0]))
+		out_node_representation = F.relu(self.out_to_representation(nodes_adj[0]))
+		node_id_rep = F.relu(self.node_to_rep(nodes_adj[0]))
 
 		# Aggregation may replaced by smarter aggregation in the future.
 		# For now it is sum for simplicity and efficiency.
@@ -42,7 +42,7 @@ class GraphSageLayer(nn.Module):
 		out_aggregated = torch.einsum('biv,bij->bjv', (out_node_representation, nodes_adj[1]))
 		
 		update_src = torch.cat((in_aggregated, node_id_rep, out_aggregated), dim=2)
-		return torch.tanh(self.node_update(update_src))
+		return F.relu(self.node_update(update_src))
 
 
 class PyramidGraphSage(nn.Module):

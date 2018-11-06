@@ -85,7 +85,7 @@ class MoleculeDataset(data.Dataset):
 		# A tuple of (node, adjacency matrix, value)
 		return (*mol_to_graph(self.molecules[idx]), torch.tensor(0) if self.molecules[idx].value<0 else torch.tensor(1))
 
-INTERMEDIATE_LAYER_SIZE = 10
+INTERMEDIATE_LAYER_SIZE = 20
 # Pyramid with 7 layers
 NUM_LAYERS = 7
 
@@ -93,8 +93,8 @@ class SdfModel(nn.Module):
 	def __init__(self):
 		super().__init__()
 		self.network = model.PyramidGraphSage(NUM_LAYERS, [atom_dim] + [INTERMEDIATE_LAYER_SIZE]*NUM_LAYERS)
-		self.final_layer_1 = nn.Linear(40, 9)
-		self.final_layer_2 = nn.Linear(9, 2)
+		self.final_layer_1 = nn.Linear(80, 15)
+		self.final_layer_2 = nn.Linear(15, 2)
 
 	def forward(self, nodes_adj):
 		nodes = self.network(nodes_adj)
@@ -105,7 +105,7 @@ class SdfModel(nn.Module):
 		# per-node basis.
 		mx, mn, av, sm = torch.max(nodes, 1), torch.min(nodes, 1), torch.mean(nodes, 1), torch.sum(nodes, 1)
 		inp = torch.cat((mx[0], mn[0], av, sm), 1)
-		inp = F.elu_(self.final_layer_1(inp))
+		inp = F.relu(self.final_layer_1(inp))
 		return self.final_layer_2(inp)
 
 def train(file_names, epochs, test_files):
@@ -131,6 +131,7 @@ def train(file_names, epochs, test_files):
 
 	print("Running propagations")
 	running_loss = 0.0
+	total_loss = 0.0
 	for epoch in range(epochs):
 		for i, data in enumerate(trainloader):
 			# get the inputs
@@ -148,33 +149,44 @@ def train(file_names, epochs, test_files):
 	
 			# print statistics
 			running_loss += loss.item()
+			total_loss += loss.item()
 			if True:
 				print('[%d, %5d] loss: %f' %
 					  (epoch + 1, i + 1, running_loss))
 				running_loss = 0.0
 
-		optimizer.zero_grad()
-		true_positives = 0
-		true_negatives = 0
-		false_positives = 0
-		false_negatives = 0
+		print("Total epoch loss: %f" % (total_loss,))
+		total_loss = 0.0
 
-		for i, data in enumerate(testloader):
-			nodes, adjs, labels = data
-			outputs = sdf_model((nodes, adjs))
-			for j in range(outputs.shape[0]):
-				if outputs[j][0] > outputs[j][1]:
-					if labels[j] == 0:
-						true_positives += 1
+		if epoch%5 == 4:
+			optimizer.zero_grad()
+			true_positives = 0
+			true_negatives = 0
+			false_positives = 0
+			false_negatives = 0
+	
+			for i, data in enumerate(testloader):
+				nodes, adjs, labels = data
+				outputs = sdf_model((nodes, adjs))
+				loss = criterion(outputs, labels)
+				running_loss += loss
+				for j in range(outputs.shape[0]):
+					if outputs[j][0] > outputs[j][1]:
+						if labels[j] == 0:
+							true_negatives += 1
+						else:
+							false_negatives += 1
 					else:
-						false_negatives += 1
-				else:
-					if labels[j] == 0:
-						false_positives += 1
-					else:
-						true_negatives += 1
-		print("true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d" % (true_positives, true_negatives, false_positives, false_negatives))
-		optimizer.zero_grad()
+						if labels[j] == 0:
+							false_positives += 1
+						else:
+							true_positives += 1
+				print("[test, %d]: test running loss: %f" % (i, running_loss))
+				running_loss = 0
+				if i > 2:
+					break
+			print("true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d" % (true_positives, true_negatives, false_positives, false_negatives))
+			optimizer.zero_grad()
 
 
 
