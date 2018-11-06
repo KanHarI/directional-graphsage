@@ -6,27 +6,21 @@ import torch
 import sdf_loader
 import sdf_model
 
-import pickle
 
+TEST_SET = ["NCI_pickled/145total-connect.sdf.pickle.bin"]
 
-TEST_SET = "145total-connect.sdf"
-
-TRAINING_SETS = ["1total-connect.sdf",
-				"33total-connect.sdf",
-				"41total-connect.sdf",
-				"47total-connect.sdf",
-				"81total-connect.sdf",
-				"83total-connect.sdf",
-				"109total-connect.sdf",
-				"123total-connect.sdf"]
+TRAINING_SETS = ["NCI_pickled/1total-connect.sdf.pickle.bin",
+				#"NCI_pickled/33total-connect.sdf.pickle.bin",
+				#"NCI_pickled/41total-connect.sdf.pickle.bin",
+				#"NCI_pickled/47total-connect.sdf.pickle.bin",
+				#"NCI_pickled/81total-connect.sdf.pickle.bin",
+				#"NCI_pickled/83total-connect.sdf.pickle.bin",
+				#"NCI_pickled/109total-connect.sdf.pickle.bin",
+				"NCI_pickled/123total-connect.sdf.pickle.bin"]
 
 
 def main():
-	for ts in TRAINING_SETS:
-		pickle.dump(sdf_loader.SdfFile("NCI_full\\" + ts), open(TRAINING_SETS + ".pickle.bin", 'wb'))
-	# train_sets = map(lambda x: "NCI_full\\" + x, TRAINING_SETS)
-	# test_set = ["NCI_full\\" + TEST_SET]
-	# sdf_model.train(train_sets, 100, test_set)
+	sdf_model.train(TRAINING_SETS, 100, TEST_SET)
 	
 if __name__ == "__main__":
 	main()

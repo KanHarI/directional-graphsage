@@ -1,7 +1,6 @@
 
 import parsec as P
 
-
 @P.generate
 def num_i():
 	tmp = yield P.many1(P.digit())

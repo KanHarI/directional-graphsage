@@ -9,11 +9,37 @@ import model
 import sdf_loader
 import itertools
 
-atoms = ['B', 'Bi', 'Br', 'C', 'Cl', 'Cr', 'Cu', 'F', 'Hg', 'N', 'Na', 'Ni', 'O', 'P', 'Pt', 'Rh', 'S', 'Si', 'Sn', 'Zn']
+import pickle
+
+
+atoms = [
+	'Ac', 'Ag', 'Al', 'As', 'Au',
+	'B', 'Bi', 'Br',
+	'C', 'Cd', 'Ce', 'Cl', 'Co', 'Cr', 'Cu',
+	'Dy',
+	'Er', 'Eu',
+	'F', 'Fe',
+	'Ga', 'Gd', 'Ge',
+	'Hf', 'Hg',
+	'I', 'In', 'Ir',
+	'K',
+	'La',
+	'Mg', 'Mn', 'Mo',
+	'N', 'Nb', 'Nd', 'Na', 'Ni',
+	'O', 'Os',
+	'P', 'Pb', 'Pd', 'Pt',
+	'Re', 'Rh', 'Ru',
+	'S', 'Sb', 'Se', 'Si', 'Sm', 'Sn',
+	'Ta', 'Te', 'Th', 'Ti', 'Tl',
+	'U',
+	'V',
+	'W',
+	'Y',
+	'Zn', 'Zr']
 atoms_dict = {atoms[i]:i for i in range(len(atoms))}
 atom_dim = len(atoms) + 2 # +2 for mass delta and charge delta
 
-MAX_MOLECULE_SIZE = 100
+MAX_MOLECULE_SIZE = 128
 
 def mol_to_graph(molecule):
 	node_vals = torch.zeros((MAX_MOLECULE_SIZE, atom_dim), dtype=torch.float32)
@@ -48,19 +74,16 @@ def mol_to_graph(molecule):
 
 class MoleculeDataset(data.Dataset):
 	def __init__(self, file_names):
-		tmp = map(sdf_loader.SdfFile, file_names)
-		tmp = list(itertools.chain.from_iterable(map(lambda x: x.molecules, tmp)))
-		self.molecules = list(map(mol_to_graph, tmp))
-		self.vals = list(map(lambda x: torch.tensor(0) if x.value<0 else torch.tensor(1), tmp))
-		assert len(self.molecules) == len(self.vals)
+		tmp = map(lambda x: pickle.load(open(x, 'rb')), file_names)
+		tmp = itertools.chain.from_iterable(map(lambda x: x.molecules, tmp))
+		self.molecules = list(filter(lambda x: x.header.atom_num < MAX_MOLECULE_SIZE, tmp))
 
 	def __len__(self):
 		return len(self.molecules)
 
 	def __getitem__(self, idx):
 		# A tuple of (node, adjacency matrix, value)
-		return self.molecules[idx][0], self.molecules[idx][1], self.vals[idx]
-
+		return (*mol_to_graph(self.molecules[idx]), torch.tensor(0) if self.molecules[idx].value<0 else torch.tensor(1))
 
 INTERMEDIATE_LAYER_SIZE = 10
 # Pyramid with 7 layers
@@ -86,23 +109,27 @@ class SdfModel(nn.Module):
 		return self.final_layer_2(inp)
 
 def train(file_names, epochs, test_files):
+	print("Creating model")
 	sdf_model = SdfModel()
 
+	print("Creating dataset")
 	trainloader = torch.utils.data.DataLoader(
 		MoleculeDataset(file_names),
-		batch_size=128,
+		batch_size=512,
 		shuffle=True,
 		num_workers=4)
 
+	print("Creating test-set")
 	testloader = torch.utils.data.DataLoader(
 		MoleculeDataset(test_files),
-		batch_size=128,
+		batch_size=512,
 		shuffle=True,
 		num_workers=4)
 
 	optimizer = optim.Adam(sdf_model.parameters())
 	criterion = nn.CrossEntropyLoss()
 
+	print("Running propagations")
 	running_loss = 0.0
 	for epoch in range(epochs):
 		for i, data in enumerate(trainloader):
@@ -121,7 +148,7 @@ def train(file_names, epochs, test_files):
 	
 			# print statistics
 			running_loss += loss.item()
-			if i == 0 and epoch > 1: # Print at the beginning of every batch after the first
+			if True:
 				print('[%d, %5d] loss: %f' %
 					  (epoch + 1, i + 1, running_loss))
 				running_loss = 0.0
