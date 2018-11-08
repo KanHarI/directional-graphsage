@@ -11,6 +11,8 @@ import itertools
 
 import pickle
 
+import random
+
 
 atoms = [
 	'Ac', 'Ag', 'Al', 'As', 'Au',
@@ -77,12 +79,13 @@ class MoleculeDataset(data.Dataset):
 		tmp = map(lambda x: pickle.load(open(x, 'rb')), file_names)
 		tmp = itertools.chain.from_iterable(map(lambda x: x.molecules, tmp))
 		self.molecules = list(filter(lambda x: x.header.atom_num < MAX_MOLECULE_SIZE, tmp))
+		random.shuffle(self.molecules)
 
 	def __len__(self):
 		return len(self.molecules)
 
 	def __getitem__(self, idx):
-		# A tuple of (node, adjacency matrix, value)
+		# A tuple of (nodes, adjacency matrix, value)
 		return (*mol_to_graph(self.molecules[idx]), torch.tensor(0) if self.molecules[idx].value<0 else torch.tensor(1))
 
 INTERMEDIATE_LAYER_SIZE = 20
@@ -110,20 +113,20 @@ class SdfModel(nn.Module):
 
 def train(file_names, epochs, test_files):
 	print("Creating model")
-	sdf_model = SdfModel()
+	sdf_model = SdfModel().cuda()
 
-	print("Creating dataset")
-	trainloader = torch.utils.data.DataLoader(
-		MoleculeDataset(file_names),
-		batch_size=512,
-		shuffle=True,
-		num_workers=4)
+	print("Creating training datasets")
+	trainloaders = list(map(lambda x: torch.utils.data.DataLoader(
+							MoleculeDataset([x]),
+							batch_size=512,
+							shuffle=False,
+							num_workers=4), file_names))
 
 	print("Creating test-set")
 	testloader = torch.utils.data.DataLoader(
 		MoleculeDataset(test_files),
 		batch_size=512,
-		shuffle=True,
+		shuffle=False,
 		num_workers=4)
 
 	optimizer = optim.Adam(sdf_model.parameters())
@@ -133,60 +136,62 @@ def train(file_names, epochs, test_files):
 	running_loss = 0.0
 	total_loss = 0.0
 	for epoch in range(epochs):
-		for i, data in enumerate(trainloader):
-			# get the inputs
-			nodes, adjs, labels = data
-	
-			# zero the parameter gradients
-			optimizer.zero_grad()
-	
-			# forward + backward + optimize
-			outputs = sdf_model((nodes, adjs))
+		random.shuffle(trainloaders)
+		for n, trainloader in enumerate(trainloaders):
+			for i, data in enumerate(trainloader):
+				# get the inputs
+				nodes, adjs, labels = data
 
-			loss = criterion(outputs, labels)
-			loss.backward()
-			optimizer.step()
+				nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
+		
+				# zero the parameter gradients
+				optimizer.zero_grad()
+		
+				# forward + backward + optimize
+				outputs = sdf_model((nodes, adjs))
 	
-			# print statistics
-			running_loss += loss.item()
-			total_loss += loss.item()
-			if True:
-				print('[%d, %5d] loss: %f' %
-					  (epoch + 1, i + 1, running_loss))
-				running_loss = 0.0
+				loss = criterion(outputs, labels)
+				loss.backward()
+				optimizer.step()
+		
+				# print statistics
+				running_loss += loss.item()
+				total_loss += loss.item()
+				if True:
+					print('[%d, %d, %5d] loss: %f' %
+						  (epoch + 1, n + 1, i + 1, running_loss))
+					running_loss = 0.0
 
 		print("Total epoch loss: %f" % (total_loss,))
 		total_loss = 0.0
 
-		if epoch%5 == 4:
-			optimizer.zero_grad()
-			true_positives = 0
-			true_negatives = 0
-			false_positives = 0
-			false_negatives = 0
-	
-			for i, data in enumerate(testloader):
-				nodes, adjs, labels = data
-				outputs = sdf_model((nodes, adjs))
-				loss = criterion(outputs, labels)
-				running_loss += loss
-				for j in range(outputs.shape[0]):
-					if outputs[j][0] > outputs[j][1]:
-						if labels[j] == 0:
-							true_negatives += 1
-						else:
-							false_negatives += 1
+		optimizer.zero_grad()
+		true_positives = 0
+		true_negatives = 0
+		false_positives = 0
+		false_negatives = 0
+
+		for i, data in enumerate(testloader):
+			nodes, adjs, labels = data
+			nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
+			outputs = sdf_model((nodes, adjs))
+			loss = criterion(outputs, labels)
+			running_loss += loss
+			for j in range(outputs.shape[0]):
+				if outputs[j][0] > outputs[j][1]:
+					if labels[j] == 0:
+						true_negatives += 1
 					else:
-						if labels[j] == 0:
-							false_positives += 1
-						else:
-							true_positives += 1
-				print("[test, %d]: test running loss: %f" % (i, running_loss))
-				running_loss = 0
-				if i > 2:
-					break
-			print("true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d" % (true_positives, true_negatives, false_positives, false_negatives))
-			optimizer.zero_grad()
+						false_negatives += 1
+				else:
+					if labels[j] == 0:
+						false_positives += 1
+					else:
+						true_positives += 1
+			print("[test, %d]: test running loss: %f" % (i, running_loss))
+			running_loss = 0
+		print("true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d" % (true_positives, true_negatives, false_positives, false_negatives))
+		optimizer.zero_grad()
 
 
 
