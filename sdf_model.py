@@ -195,7 +195,6 @@ def train(file_names, epochs, test_files):
 		print("Total epoch loss: %f" % (total_loss,))
 		total_loss = 0.0
 
-		optimizer.zero_grad()
 		true_positives = 0
 		true_negatives = 0
 		false_positives = 0
@@ -206,10 +205,10 @@ def train(file_names, epochs, test_files):
 			nodes, adjs, labels = data
 			if torch.cuda.is_available():
 				nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
-			outputs = sdf_model((nodes, adjs))
-			loss = criterion(outputs, labels)
-			running_loss += loss.item()
 			optimizer.zero_grad()
+			outputs = sdf_model((nodes, adjs))
+			loss = criterion(outputs, labels).item()
+			running_loss += loss
 			for j in range(outputs.shape[0]):
 				if outputs[j][0] > outputs[j][1]:
 					if labels[j] == 0:
@@ -221,7 +220,7 @@ def train(file_names, epochs, test_files):
 						false_positives += 1
 					else:
 						true_positives += 1
-			print("[test,\t%d]: loss: %f" % (i, loss.item()))
+			print("[test,\t%d]: loss: %f" % (i, loss))
 		print("epoch:%d, loss:%f, true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d" % (epoch+1, running_loss, true_positives, true_negatives, false_positives, false_negatives))
 		log.write("epoch:%d, loss:%f, true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d\n" % (epoch+1, running_loss, true_positives, true_negatives, false_positives, false_negatives))
 		running_loss = 0.0
