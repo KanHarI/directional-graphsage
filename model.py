@@ -66,6 +66,7 @@ class GraphSageLayer(nn.Module):
 			in_src = torch.einsum('bjv,bij->biv', (node_representation, dp))
 			out = self.attention(torch.cat((in_src, addr, hidden), dim=2))
 			in_aggregated, addr, hidden = out[:,:,:self.representation_size] ,out[:,:,self.representation_size:self.representation_size*2], out[:,:,self.representation_size*2:]
+			hidden = F.relu(hidden)
 
 		addr = o
 		hidden = o
@@ -77,6 +78,7 @@ class GraphSageLayer(nn.Module):
 			out_src = torch.einsum('biv,bij->bjv', (node_representation, dp))
 			out = self.attention(torch.cat((out_src, addr, hidden), dim=2))
 			out_aggregated, addr, hidden = out[:,:,:self.representation_size] ,out[:,:,self.representation_size:self.representation_size*2], out[:,:,self.representation_size*2:]
+			hidden = F.relu(hidden)
 		
 		in_aggregated = F.relu(in_aggregated)
 		node_id_rep = F.relu(self.node_to_rep(nodes_adj[0]))

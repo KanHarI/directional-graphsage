@@ -93,15 +93,22 @@ INTERMEDIATE_LAYER_SIZE = 20
 NUM_LAYERS = 7
 
 class SdfModel(nn.Module):
-	def __init__(self):
+	def __init__(self, iterations=3):
 		super().__init__()
 		self.network = model.PyramidGraphSage(NUM_LAYERS, [atom_dim] + [INTERMEDIATE_LAYER_SIZE]*NUM_LAYERS)
-		self.final_layer_1 = nn.Linear(80, 15)
-		self.final_layer_2 = nn.Linear(15, 2)
+		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE)
+		self.node_to_addresses = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE)
+		self.attention = nn.Linear(INTERMEDIATE_LAYER_SIZE*3, INTERMEDIATE_LAYER_SIZE*3)
+		self.final_layer_1 = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE)
+		self.final_layer_2 = nn.Linear(INTERMEDIATE_LAYER_SIZE, 2)
+		self.iterations = iterations
 			
 
 	def cuda(self):
 		self.network = self.network.cuda()
+		self.node_to_representations = self.node_to_representations.cuda()
+		self.node_to_addresses = self.node_to_addresses.cuda()
+		self.attention = self.attention.cuda()
 		self.final_layer_1 = self.final_layer_1.cuda()
 		self.final_layer_2 = self.final_layer_2.cuda()
 		return self
@@ -109,14 +116,26 @@ class SdfModel(nn.Module):
 	def forward(self, nodes_adj):
 		nodes = self.network(nodes_adj)
 
-		# Extracting macro features from nodes via taking the 
-		# min, max, mean and sum alongst every direction.
-		# This is required because of the graph features being on a 
-		# per-node basis.
-		mx, mn, av, sm = torch.max(nodes, 1), torch.min(nodes, 1), torch.mean(nodes, 1), torch.sum(nodes, 1)
-		inp = torch.cat((mx[0], mn[0], av, sm), 1)
-		inp = F.relu(self.final_layer_1(inp))
-		return self.final_layer_2(inp)
+		o = torch.zeros((nodes.shape[0], INTERMEDIATE_LAYER_SIZE))
+		if torch.cuda.is_available():
+			o = o.cuda()
+		addr = o
+		hidden = o
+
+		# Extracting macro features from nodes
+		nodes_rep = self.node_to_representations(nodes)
+		nodes_addr = F.normalize(self.node_to_addresses(nodes), dim=2)
+		for i in range(self.iterations):
+			dp = torch.einsum('bja,ba->bj', (nodes_addr, addr))
+			dp = torch.exp(dp) # softmax based attention
+			dp = F.normalize(dp, dim=1)
+			in_src = torch.einsum('bjv,bj->bv', (nodes_rep, dp))
+			out = self.attention(torch.cat((in_src, addr, hidden), dim=1))
+			in_aggregated, addr, hidden = out[:,:INTERMEDIATE_LAYER_SIZE] ,out[:,INTERMEDIATE_LAYER_SIZE:INTERMEDIATE_LAYER_SIZE*2], out[:,INTERMEDIATE_LAYER_SIZE*2:]
+			hidden = F.relu(hidden)
+
+		return self.final_layer_2(F.relu(self.final_layer_1(in_aggregated)))
+
 
 def train(file_names, epochs, test_files):
 	print("Creating model")
@@ -127,14 +146,14 @@ def train(file_names, epochs, test_files):
 	print("Creating training datasets")
 	trainloaders = list(map(lambda x: torch.utils.data.DataLoader(
 							MoleculeDataset([x]),
-							batch_size=128,
+							batch_size=64,
 							shuffle=False,
 							num_workers=1), file_names))
 
 	print("Creating test-set")
 	testloader = torch.utils.data.DataLoader(
 		MoleculeDataset(test_files),
-		batch_size=128,
+		batch_size=64,
 		shuffle=False,
 		num_workers=1)
 
@@ -189,6 +208,7 @@ def train(file_names, epochs, test_files):
 			outputs = sdf_model((nodes, adjs))
 			loss = criterion(outputs, labels)
 			running_loss += loss
+			optimizer.zero_grad()
 			for j in range(outputs.shape[0]):
 				if outputs[j][0] > outputs[j][1]:
 					if labels[j] == 0:
