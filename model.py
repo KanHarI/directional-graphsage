@@ -55,7 +55,7 @@ class GraphSageLayer(nn.Module):
 
 		o = torch.zeros((*node_addr.shape[:2], self.representation_size))
 		if torch.cuda.is_available():
-			o = hidden_0.cuda()
+			o = o.cuda()
 		addr = o
 		hidden = o
 		for i in range(self.iterations):
