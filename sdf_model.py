@@ -96,8 +96,8 @@ class SdfModel(nn.Module):
 	def __init__(self):
 		super().__init__()
 		self.network = model.PyramidGraphSage(NUM_LAYERS, [atom_dim] + [INTERMEDIATE_LAYER_SIZE]*NUM_LAYERS)
-		self.final_layer_1 = nn.Linear(80, 15)
-		self.final_layer_2 = nn.Linear(15, 2)
+		self.final_layer_1 = nn.Linear(80, 15).cuda()
+		self.final_layer_2 = nn.Linear(15, 2).cuda()
 
 	def forward(self, nodes_adj):
 		nodes = self.network(nodes_adj)

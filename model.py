@@ -23,10 +23,10 @@ class GraphSageLayer(nn.Module):
 		super().__init__()
 		self.input_dim = input_dim
 		self.output_dim = output_dim
-		self.in_to_representation = nn.Linear(input_dim, representation_size)
-		self.out_to_representation = nn.Linear(input_dim, representation_size)
-		self.node_to_rep = nn.Linear(input_dim, representation_size)
-		self.node_update = nn.Linear(3*representation_size, output_dim)
+		self.in_to_representation = nn.Linear(input_dim, representation_size).cuda()
+		self.out_to_representation = nn.Linear(input_dim, representation_size).cuda()
+		self.node_to_rep = nn.Linear(input_dim, representation_size).cuda()
+		self.node_update = nn.Linear(3*representation_size, output_dim).cuda()
 
 	def forward(self, nodes_adj):
 		# graph_nodes_batch: (batch, node, vector)
@@ -68,12 +68,12 @@ class PyramidGraphSage(nn.Module):
 				self.layers.append(GraphSageLayer(
 					feature_sizes[i],
 					feature_sizes[i+1],
-					representation_sizes[i]))
+					representation_sizes[i]).cuda())
 			else:
 				self.layers.append(GraphSageLayer(
 					feature_sizes[i]+feature_sizes[self.num_layers-i-1],
 					feature_sizes[i+1],
-					representation_sizes[i]))
+					representation_sizes[i]).cuda())
 
 	def forward(self, nodes_adj):
 		fpass_graph = nodes_adj[0]
