@@ -9,7 +9,7 @@ import copy
 
 
 class GraphSageLayer(nn.Module):
-	def __init__(self, input_dim, output_dim, representation_size, iterations=3):
+	def __init__(self, input_dim, output_dim, representation_size, iterations=5):
 		# input_dim: size of vector representation of incoming nodes
 		# output_dim: size of node output dimension per node
 		# representation_size: size of internal hidden layers

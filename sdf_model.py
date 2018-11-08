@@ -93,7 +93,7 @@ INTERMEDIATE_LAYER_SIZE = 20
 NUM_LAYERS = 7
 
 class SdfModel(nn.Module):
-	def __init__(self, iterations=3):
+	def __init__(self, iterations=5):
 		super().__init__()
 		self.network = model.PyramidGraphSage(NUM_LAYERS, [atom_dim] + [INTERMEDIATE_LAYER_SIZE]*NUM_LAYERS)
 		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE)
@@ -138,6 +138,7 @@ class SdfModel(nn.Module):
 
 
 def train(file_names, epochs, test_files):
+	log = open("log.txt", "w")
 	print("Creating model")
 	sdf_model = SdfModel()
 	if torch.cuda.is_available():
@@ -221,7 +222,8 @@ def train(file_names, epochs, test_files):
 					else:
 						true_positives += 1
 			print("[test,\t%d]: loss: %f" % (i, loss.item()))
-		print("loss:%f, true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d" % (running_loss, true_positives, true_negatives, false_positives, false_negatives))
+		print("epoch:%d, loss:%f, true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d" % (epoch+1, running_loss, true_positives, true_negatives, false_positives, false_negatives))
+		log.write("epoch:%d, loss:%f, true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d\n" % (epoch+1, running_loss, true_positives, true_negatives, false_positives, false_negatives))
 		running_loss = 0.0
 		optimizer.zero_grad()
 
