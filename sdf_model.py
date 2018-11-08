@@ -120,14 +120,14 @@ def train(file_names, epochs, test_files):
 							MoleculeDataset([x]),
 							batch_size=512,
 							shuffle=False,
-							num_workers=8), file_names))
+							num_workers=6), file_names))
 
 	print("Creating test-set")
 	testloader = torch.utils.data.DataLoader(
 		MoleculeDataset(test_files),
 		batch_size=512,
 		shuffle=False,
-		num_workers=8)
+		num_workers=6)
 
 	optimizer = optim.Adam(sdf_model.parameters())
 	criterion = nn.CrossEntropyLoss()
