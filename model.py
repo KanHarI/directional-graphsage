@@ -118,7 +118,7 @@ class PyramidGraphSage(nn.Module):
 				
 
 	def cuda(self):
-		self.layers = list(map(lambda x: x.cuda, self.layers))
+		self.layers = list(map(lambda x: x.cuda(), self.layers))
 		return self
 
 	def forward(self, nodes_adj):
