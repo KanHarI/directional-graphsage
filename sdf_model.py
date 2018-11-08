@@ -96,8 +96,14 @@ class SdfModel(nn.Module):
 	def __init__(self):
 		super().__init__()
 		self.network = model.PyramidGraphSage(NUM_LAYERS, [atom_dim] + [INTERMEDIATE_LAYER_SIZE]*NUM_LAYERS)
-		self.final_layer_1 = nn.Linear(80, 15).cuda()
-		self.final_layer_2 = nn.Linear(15, 2).cuda()
+		self.final_layer_1 = nn.Linear(80, 15)
+		self.final_layer_2 = nn.Linear(15, 2)
+			
+
+	def cuda(self):
+		self.network = self.network.cuda()
+		self.final_layer_1 = self.final_layer_1.cuda()
+		self.final_layer_2 = self.final_layer_2.cuda()
 
 	def forward(self, nodes_adj):
 		nodes = self.network(nodes_adj)
@@ -113,21 +119,23 @@ class SdfModel(nn.Module):
 
 def train(file_names, epochs, test_files):
 	print("Creating model")
-	sdf_model = SdfModel().cuda()
+	sdf_model = SdfModel()
+	if torch.cuda.is_available():
+		sdf_model = sdf_model.cuda()
 
 	print("Creating training datasets")
 	trainloaders = list(map(lambda x: torch.utils.data.DataLoader(
 							MoleculeDataset([x]),
-							batch_size=512,
+							batch_size=128,
 							shuffle=False,
-							num_workers=0), file_names))
+							num_workers=1), file_names))
 
 	print("Creating test-set")
 	testloader = torch.utils.data.DataLoader(
 		MoleculeDataset(test_files),
-		batch_size=512,
+		batch_size=128,
 		shuffle=False,
-		num_workers=0)
+		num_workers=1)
 
 	optimizer = optim.Adam(sdf_model.parameters())
 	criterion = nn.CrossEntropyLoss()
@@ -142,7 +150,8 @@ def train(file_names, epochs, test_files):
 				# get the inputs
 				nodes, adjs, labels = data
 
-				nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
+				if torch.cuda.is_available():
+					nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
 		
 				# zero the parameter gradients
 				optimizer.zero_grad()
@@ -158,7 +167,7 @@ def train(file_names, epochs, test_files):
 				running_loss += loss.item()
 				total_loss += loss.item()
 				if True:
-					print('[%d, %d, %5d] loss: %f' %
+					print('[%d,\t%d,\t%d] loss: %f' %
 						  (epoch + 1, n + 1, i + 1, running_loss))
 					running_loss = 0.0
 
@@ -170,10 +179,12 @@ def train(file_names, epochs, test_files):
 		true_negatives = 0
 		false_positives = 0
 		false_negatives = 0
+		running_loss = 0.0
 
 		for i, data in enumerate(testloader):
 			nodes, adjs, labels = data
-			nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
+			if torch.cuda.is_available():
+				nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
 			outputs = sdf_model((nodes, adjs))
 			loss = criterion(outputs, labels)
 			running_loss += loss
@@ -188,9 +199,9 @@ def train(file_names, epochs, test_files):
 						false_positives += 1
 					else:
 						true_positives += 1
-			print("[test, %d]: test running loss: %f" % (i, running_loss))
-			running_loss = 0
-		print("true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d" % (true_positives, true_negatives, false_positives, false_negatives))
+			print("[test,\t%d]: loss: %f" % (i, loss))
+		print("loss:%f, true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d" % (running_loss, true_positives, true_negatives, false_positives, false_negatives))
+		running_loss = 0.0
 		optimizer.zero_grad()
 
 
