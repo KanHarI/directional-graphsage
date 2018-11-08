@@ -147,14 +147,14 @@ def train(file_names, epochs, test_files):
 	print("Creating training datasets")
 	trainloaders = list(map(lambda x: torch.utils.data.DataLoader(
 							MoleculeDataset([x]),
-							batch_size=512,
+							batch_size=256,
 							shuffle=False,
 							num_workers=1), file_names))
 
 	print("Creating test-set")
 	testloader = torch.utils.data.DataLoader(
 		MoleculeDataset(test_files),
-		batch_size=512,
+		batch_size=256,
 		shuffle=False,
 		num_workers=1)
 
