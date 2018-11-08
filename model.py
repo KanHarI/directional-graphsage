@@ -40,6 +40,7 @@ class GraphSageLayer(nn.Module):
 		self.node_to_rep = self.node_to_rep.cuda()
 		self.attention = self.attention.cuda()
 		self.node_update = self.node_update.cuda()
+		return self
 
 	def forward(self, nodes_adj):
 		# graph_nodes_batch: (batch, node, vector)
@@ -118,6 +119,7 @@ class PyramidGraphSage(nn.Module):
 
 	def cuda(self):
 		self.layers = list(map(lambda x: x.cuda, self.layers))
+		return self
 
 	def forward(self, nodes_adj):
 		fpass_graph = nodes_adj[0]

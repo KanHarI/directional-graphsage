@@ -104,6 +104,7 @@ class SdfModel(nn.Module):
 		self.network = self.network.cuda()
 		self.final_layer_1 = self.final_layer_1.cuda()
 		self.final_layer_2 = self.final_layer_2.cuda()
+		return self
 
 	def forward(self, nodes_adj):
 		nodes = self.network(nodes_adj)
