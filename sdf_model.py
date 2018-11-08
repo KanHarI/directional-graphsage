@@ -208,6 +208,7 @@ def train(file_names, epochs, test_files):
 			optimizer.zero_grad()
 			outputs = sdf_model((nodes, adjs))
 			loss = criterion(outputs, labels).item()
+			loss.backward()
 			running_loss += loss
 			for j in range(outputs.shape[0]):
 				if outputs[j][0] > outputs[j][1]:
