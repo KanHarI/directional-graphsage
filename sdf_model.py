@@ -40,22 +40,29 @@ atoms = [
 	'Zn', 'Zr']
 atoms_dict = {atoms[i]:i for i in range(len(atoms))}
 atom_dim = len(atoms) + 2 # +2 for mass delta and charge delta
+# atom_dim is 66
 
 MAX_MOLECULE_SIZE = 128
 
-def mol_to_graph(molecule):
-	node_vals = torch.zeros((MAX_MOLECULE_SIZE, atom_dim), dtype=torch.float32)
+def mol_to_sparse(molecule):
+	nodes_idx = []
+	node_v = []
 	for i in range(len(molecule.atoms)):
-		# An atom is represented as:
-		#        atom_type('C')   mass charge
-		#            |              |   /
-		#            V              V  V 
-		# [0,0,...,0,1,0,0...0,0,0,dd,ccc]
-		node_vals[i, atoms_dict[molecule.atoms[i].symb]] = 1
-		node_vals[i, atom_dim-2] = molecule.atoms[i].dd # mass delta
-		node_vals[i, atom_dim-1] = molecule.atoms[i].ccc # charge delta
+		nodes_idx.append([i,atoms_dict[molecule.atoms[i].symb]])
+		node_v.append(1)
+		if molecule.atoms[i].dd != 0:
+			nodes_idx.append([i,atom_dim-2])
+			node_v.append(molecule.atoms[i].dd)
+		if molecule.atoms[i].ccc != 0 or i == 0:
+			# if i=0, add term for size determining
+			nodes_idx.append([i,atom_dim-1])
+			node_v.append(molecule.atoms[i].ccc)
 
-	adj_matrix = torch.zeros((MAX_MOLECULE_SIZE,MAX_MOLECULE_SIZE), dtype=torch.float32)
+	edge_idx = []
+	edge_v = []
+	# Add size determining block
+	edge_idx.append([len(molecule.atoms)-1]*2)
+	edge_v.append(0.0)
 	for bond in molecule.bonds:
 		a,b = molecule.atoms[bond.fst-1], molecule.atoms[bond.snd-1]
 		# bond.bond_type is 1,2,3... for single, double, triple... bond
@@ -63,37 +70,84 @@ def mol_to_graph(molecule):
 		# If one atom is carbon, the connection is directional from it to the 
 		# second atom
 		if (a.symb == 'C') == (b.symb == 'C'):
-			adj_matrix[bond.fst-1, bond.snd-1] = bond.bond_type/2 # halving to preserve the same average
-			adj_matrix[bond.snd-1, bond.fst-1] = bond.bond_type/2 # degree between nodes
+			edge_idx.append([bond.fst-1, bond.snd-1])
+			edge_v.append(bond.bond_type/2)
+			edge_idx.append([bond.snd-1, bond.fst-1])
+			edge_v.append(bond.bond_type/2)
 			continue
 		if (a.symb == 'C'):
-			adj_matrix[bond.fst-1, bond.snd-1] = bond.bond_type
+			edge_idx.append([bond.fst-1, bond.snd-1])
+			edge_v.append(bond.bond_type)
 			continue
-		adj_matrix[bond.snd-1, bond.fst-1] = bond.bond_type
-	
-	return node_vals, adj_matrix
+		edge_idx.append([bond.snd-1, bond.fst-1])
+		edge_v.append(bond.bond_type)
+
+	nodes_idx = torch.LongTensor(nodes_idx).t()
+	node_v = torch.FloatTensor(node_v)
+	edge_idx = torch.LongTensor(edge_idx).t()
+	edge_v = torch.FloatTensor(edge_v)
+
+	nds = (nodes_idx, node_v)
+	edg = (edge_idx, edge_v)
+
+	return nds, edg
 
 
-class MoleculeDataset(data.Dataset):
+def sparse_list_to_sparse(sparse_list):
+	indexes = list(map(lambda x: x[0], sparse_list))
+	vals = list(map(lambda x: x[1], sparse_list))
+	for i in range(len(sparse_list)):
+		d0 = torch.LongTensor([i]*indexes[i].shape[1])
+		indexes[i] = torch.stack((d0, indexes[i][0], indexes[i][1]), dim=0)
+	indexes = torch.cat((*indexes,), dim=1)
+
+	vals = torch.cat((*vals,), dim=0)
+	return torch.sparse.FloatTensor(indexes, vals)
+
+
+
+
+class MoleculeDataset:
 	def __init__(self, file_names):
 		tmp = map(lambda x: pickle.load(open(x, 'rb')), file_names)
 		tmp = itertools.chain.from_iterable(map(lambda x: x.molecules, tmp))
-		self.molecules = list(filter(lambda x: x.header.atom_num < MAX_MOLECULE_SIZE, tmp))
-		random.shuffle(self.molecules)
+		tmp = filter(lambda x: x.header.atom_num < MAX_MOLECULE_SIZE, tmp)
+		self.molecules = list(map(lambda x: (mol_to_sparse(x), torch.tensor(0) if x.value<0 else torch.tensor(1)), tmp))
+		del tmp # Free up a lot of RAM explicitly here
 
 	def __len__(self):
 		return len(self.molecules)
 
+	def shuffle(self):
+		random.shuffle(self.molecules)
+
+	def batch_generator(self, batch_size):
+		idx = 0
+		l = len(self.molecules)
+		while idx < l:
+			batch = self.molecules[idx:idx+batch_size]
+			batch_nodes = list(map(lambda x: x[0][0], batch))
+			batch_adjs = list(map(lambda x: x[0][1], batch))
+			vals = list(map(lambda x: x[1], batch))
+
+			batch_nodes = sparse_list_to_sparse(batch_nodes)
+			batch_adjs = sparse_list_to_sparse(batch_adjs)
+			vals = torch.LongTensor(vals)
+			
+			yield batch_nodes, batch_adjs, vals
+			idx += batch_size
+
+
 	def __getitem__(self, idx):
 		# A tuple of (nodes, adjacency matrix, value)
-		return (*mol_to_graph(self.molecules[idx]), torch.tensor(0) if self.molecules[idx].value<0 else torch.tensor(1))
+		return (*self.molecules[idx], torch.tensor(0) if self.molecules[idx].value<0 else torch.tensor(1))
 
 INTERMEDIATE_LAYER_SIZE = 20
 # Pyramid with 7 layers
 NUM_LAYERS = 13
 
 class SdfModel(nn.Module):
-	def __init__(self, iterations=5):
+	def __init__(self, iterations=8):
 		super().__init__()
 		self.network = model.PyramidGraphSage(NUM_LAYERS, [atom_dim] + [INTERMEDIATE_LAYER_SIZE]*NUM_LAYERS)
 		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE)
@@ -138,18 +192,14 @@ class SdfModel(nn.Module):
 
 
 def train(file_names, epochs, test_files):
-	log = open("log.txt", "w")
+	open("log.txt", "w").write("Model initializing...")
 	print("Creating model")
 	sdf_model = SdfModel()
 	if torch.cuda.is_available():
 		sdf_model = sdf_model.cuda()
 
 	print("Creating training datasets")
-	trainloaders = list(map(lambda x: torch.utils.data.DataLoader(
-							MoleculeDataset([x]),
-							batch_size=256,
-							shuffle=False,
-							num_workers=1), file_names))
+	trainloader = MoleculeDataset(file_names)
 
 	print("Creating test-set")
 	testloader = torch.utils.data.DataLoader(
@@ -162,37 +212,39 @@ def train(file_names, epochs, test_files):
 	criterion = nn.CrossEntropyLoss()
 
 	print("Running propagations")
+	open("log.txt", "a").write("\nModel initialized!")
 	running_loss = 0.0
 	total_loss = 0.0
 	for epoch in range(epochs):
-		random.shuffle(trainloaders)
-		for n, trainloader in enumerate(trainloaders):
-			for i, data in enumerate(trainloader):
-				# get the inputs
-				nodes, adjs, labels = data
-
-				if torch.cuda.is_available():
-					nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
-		
-				# zero the parameter gradients
-				optimizer.zero_grad()
-		
-				# forward + backward + optimize
-				outputs = sdf_model((nodes, adjs))
+		trainloader.shuffle()
+		for i, data in enumerate(trainloader.batch_generator(256)):
+			# get the inputs
+			nodes, adjs, labels = data
+			if torch.cuda.is_available():
+				nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
+			nodes = nodes.to_dense()
+			adjs = adjs.to_dense()
 	
-				loss = criterion(outputs, labels)
-				loss.backward()
-				optimizer.step()
-		
-				# print statistics
-				running_loss += loss.item()
-				total_loss += loss.item()
-				if True:
-					print('[%d,\t%d,\t%d] loss: %f' %
-						  (epoch + 1, n + 1, i + 1, running_loss))
-					running_loss = 0.0
+			# zero the parameter gradients
+			optimizer.zero_grad()
+	
+			# forward + backward + optimize
+			outputs = sdf_model((nodes, adjs))
+
+			loss = criterion(outputs, labels)
+			loss.backward()
+			optimizer.step()
+	
+			# print statistics
+			running_loss += loss.item()
+			total_loss += loss.item()
+			if True:
+				print('[%d,\t%d] loss: %f' %
+					  (epoch + 1, i + 1, running_loss))
+				running_loss = 0.0
 
 		print("Total epoch loss: %f" % (total_loss,))
+		open("log.txt", "a").write("\nepoch: %d, Total epoch loss: %f" % (epoch+1, total_loss))
 		total_loss = 0.0
 
 		true_positives = 0
@@ -201,7 +253,8 @@ def train(file_names, epochs, test_files):
 		false_negatives = 0
 		running_loss = 0.0
 
-		for i, data in enumerate(testloader):
+		testloader.shuffle()
+		for i, data in enumerate(testloader.batch_generator(256)):
 			nodes, adjs, labels = data
 			if torch.cuda.is_available():
 				nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
@@ -223,7 +276,7 @@ def train(file_names, epochs, test_files):
 						true_positives += 1
 			print("[test,\t%d]: loss: %f" % (i, loss.item()))
 		print("epoch:%d, loss:%f, true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d" % (epoch+1, running_loss, true_positives, true_negatives, false_positives, false_negatives))
-		log.write("epoch:%d, loss:%f, true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d\n" % (epoch+1, running_loss, true_positives, true_negatives, false_positives, false_negatives))
+		open("log.txt", "a").write("\nepoch:%d, loss:%f, true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d\n" % (epoch+1, running_loss, true_positives, true_negatives, false_positives, false_negatives))
 		running_loss = 0.0
 		optimizer.zero_grad()
 
