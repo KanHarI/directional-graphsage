@@ -254,6 +254,9 @@ def train(file_names, epochs, test_files):
 			nodes, adjs, labels = data
 			if torch.cuda.is_available():
 				nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
+			nodes = nodes.to_dense()
+			adjs = adjs.to_dense()
+
 			optimizer.zero_grad()
 			outputs = sdf_model((nodes, adjs))
 			loss = criterion(outputs, labels)
