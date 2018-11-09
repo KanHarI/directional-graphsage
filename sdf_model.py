@@ -192,7 +192,7 @@ class SdfModel(nn.Module):
 
 
 def train(file_names, epochs, test_files):
-	open("log.txt", "w").write("Model initializing...")
+	open("log.txt", "w").write("\nModel initializing...")
 	print("Creating model")
 	sdf_model = SdfModel()
 	if torch.cuda.is_available():
