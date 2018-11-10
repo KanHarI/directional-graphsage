@@ -143,8 +143,7 @@ class MoleculeDataset:
 		return (*self.molecules[idx], torch.tensor(0) if self.molecules[idx].value<0 else torch.tensor(1))
 
 INTERMEDIATE_LAYER_SIZE = 20
-# Pyramid with 7 layers
-NUM_LAYERS = 5
+NUM_LAYERS = 14
 
 class SdfModel(nn.Module):
 	def __init__(self, iterations=8):

@@ -90,16 +90,44 @@ class GraphSageLayer(nn.Module):
 
 class PyramidGraphSage(nn.Module):
 	# This architecture allows for skip connections:
+	# (Example of layout with 8 layers)
 	# Input
 	# | \
-	# |  L0
-	# |  | \
-	# |  |  L1
-	# |  | /
-	# |  L2
-	# | /
-	# L3 -> Output
+	# |  \
+	# |   L0
+	# |  /| \
+	# | / |  \
+	# | | |   L1
+	# | | |  /| \
+	# | | | / |  \
+	# | | | | |   L2
+	# | | | | |  /| \
+	# | | | | | / |  \
+	# | | | | | | |   L3
+	# | | | | | | |  /
+	# | | | | | | | /
+	# | | | | | | L4
+	# | | | | | | |
+	# | | | | \ |/
+	# | | | |  L5
+	# | | | | /
+	# | | \ |/
+	# | |  L6
+	# | | /
+	# \ |/
+	#  L7
+	#  |
+	# Output
+	#
+	# This allows efficient training with "Lazy layer training":
+	# I->L7,
+	# I->L0->L7,
+	# I->L0->L6->L7,
+	# I->L0->L1->L6->L7...
+	# Effectively "training one layer at a time" continously
+
 	def __init__(self, num_layers, feature_sizes, representation_sizes=None):
+		assert num_layers%2 == 0
 		assert num_layers == len(feature_sizes)-1
 		super().__init__()
 		self.num_layers = num_layers
@@ -107,18 +135,22 @@ class PyramidGraphSage(nn.Module):
 			representation_sizes = feature_sizes[:-1]
 		self.layers = []
 		for i in range(self.num_layers):
-			if i <= (self.num_layers-1)//2:
+			if i < self.num_layers//2:
 				self.layers.append(GraphSageLayer(
 					feature_sizes[i],
 					feature_sizes[i+1],
 					representation_sizes[i]))
-			else:
+			elif i == self.num_layers//2:
 				self.layers.append(GraphSageLayer(
 					feature_sizes[i]+feature_sizes[self.num_layers-i-1],
 					feature_sizes[i+1],
 					representation_sizes[i]))
+			else:
+				self.layers.append(GraphSageLayer(
+					feature_sizes[i]+feature_sizes[self.num_layers-i]+feature_sizes[self.num_layers-i-1],
+					feature_sizes[i+1],
+					representation_sizes[i]))
 				
-
 	def cuda(self):
 		self.layers = list(map(lambda x: x.cuda(), self.layers))
 		return self
@@ -128,12 +160,16 @@ class PyramidGraphSage(nn.Module):
 		adj = nodes_adj[1]
 		stashed_results = []
 		for i in range(self.num_layers):
-			if i <= (self.num_layers-1)//2:
+			if i < self.num_layers//2:
 				stashed_results.append(fpass_graph)
+				fpass_graph = self.layers[i]((fpass_graph, adj))
+			elif i == self.num_layers//2:
+				# Concatenate skip connection inputs for pyramid "downward slope"
+				fpass_graph = torch.cat((fpass_graph, stashed_results[self.num_layers-i-1]), dim=2)
 				fpass_graph = self.layers[i]((fpass_graph, adj))
 			else:
 				# Concatenate skip connection inputs for pyramid "downward slope"
-				fpass_graph = torch.cat((fpass_graph, stashed_results[self.num_layers-i-1]), dim=2)
+				fpass_graph = torch.cat((fpass_graph, stashed_results[self.num_layers-i], stashed_results[self.num_layers-i-1]), dim=2)
 				fpass_graph = self.layers[i]((fpass_graph, adj))
 		return fpass_graph
 
