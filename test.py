@@ -20,7 +20,7 @@ TRAINING_SETS = ["NCI_pickled/1total-connect.sdf.pickle.bin",
 
 
 def main():
-	sdf_model.train(TRAINING_SETS, 100, TEST_SET)
+	sdf_model.train(TRAINING_SETS, 200, TEST_SET)
 	
 if __name__ == "__main__":
 	main()

@@ -144,7 +144,7 @@ class MoleculeDataset:
 
 INTERMEDIATE_LAYER_SIZE = 20
 # Pyramid with 7 layers
-NUM_LAYERS = 13
+NUM_LAYERS = 5
 
 class SdfModel(nn.Module):
 	def __init__(self, iterations=8):
