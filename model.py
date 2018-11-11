@@ -153,11 +153,11 @@ class PyramidGraphSage(nn.Module):
 					representation_sizes[i]))
 			if batchnorm_dim:
 				self.norm_layers.append(nn.BatchNorm1d(batchnorm_dim))
-			else:
-				self.norm_layers.append(lambda x: x)
 				
+
 	def cuda(self):
 		self.layers = list(map(lambda x: x.cuda(), self.layers))
+		self.norm_layers = list(map(lambda x: x.cuda(), self.norm_layers))
 		return self
 
 	def forward(self, nodes_adj):
@@ -174,6 +174,7 @@ class PyramidGraphSage(nn.Module):
 				# Concatenate skip connection inputs for pyramid "downward slope"
 				fpass_graph = torch.cat((fpass_graph, stashed_results[self.num_layers-i], stashed_results[self.num_layers-i-1]), dim=2)
 			fpass_graph = self.layers[i]((fpass_graph, adj))
-			fpass_graph = self.norm_layers[i](fpass_graph)
+			if self.norm_layers:
+				fpass_graph = self.norm_layers[i](fpass_graph)
 		return fpass_graph
 
