@@ -45,24 +45,21 @@ atom_dim = len(atoms) + 2 # +2 for mass delta and charge delta
 MAX_MOLECULE_SIZE = 128
 
 def mol_to_sparse(molecule):
-	nodes_idx = []
-	node_v = []
+	nodes_idx = [(MAX_MOLECULE_SIZE-1, atom_dim-1)]
+	node_v = [0]
 	for i in range(len(molecule.atoms)):
 		nodes_idx.append([i,atoms_dict[molecule.atoms[i].symb]])
 		node_v.append(1)
 		if molecule.atoms[i].dd != 0:
 			nodes_idx.append([i,atom_dim-2])
 			node_v.append(molecule.atoms[i].dd)
-		if molecule.atoms[i].ccc != 0 or i == 0:
+		if molecule.atoms[i].ccc != 0:
 			# if i=0, add term for size determining
 			nodes_idx.append([i,atom_dim-1])
 			node_v.append(molecule.atoms[i].ccc)
 
-	edge_idx = []
-	edge_v = []
-	# Add size determining block
-	edge_idx.append([len(molecule.atoms)-1]*2)
-	edge_v.append(0.0)
+	edge_idx = [(MAX_MOLECULE_SIZE-1,MAX_MOLECULE_SIZE-1)]
+	edge_v = [0.0]
 	for bond in molecule.bonds:
 		a,b = molecule.atoms[bond.fst-1], molecule.atoms[bond.snd-1]
 		# bond.bond_type is 1,2,3... for single, double, triple... bond
@@ -148,7 +145,7 @@ NUM_LAYERS = 14
 class SdfModel(nn.Module):
 	def __init__(self, iterations=8):
 		super().__init__()
-		self.network = model.PyramidGraphSage(NUM_LAYERS, [atom_dim] + [INTERMEDIATE_LAYER_SIZE]*NUM_LAYERS)
+		self.network = model.PyramidGraphSage(NUM_LAYERS, [atom_dim] + [INTERMEDIATE_LAYER_SIZE]*NUM_LAYERS, batchnorm_dim=MAX_MOLECULE_SIZE)
 		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE)
 		self.node_to_addresses = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE)
 		self.attention = nn.Linear(INTERMEDIATE_LAYER_SIZE*3, INTERMEDIATE_LAYER_SIZE*3)

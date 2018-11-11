@@ -126,7 +126,7 @@ class PyramidGraphSage(nn.Module):
 	# I->L0->L1->L6->L7...
 	# Effectively "training one layer at a time" continously
 
-	def __init__(self, num_layers, feature_sizes, representation_sizes=None):
+	def __init__(self, num_layers, feature_sizes, representation_sizes=None, batchnorm_dim=None):
 		assert num_layers%2 == 0
 		assert num_layers == len(feature_sizes)-1
 		super().__init__()
@@ -134,6 +134,7 @@ class PyramidGraphSage(nn.Module):
 		if representation_sizes is None:
 			representation_sizes = feature_sizes[:-1]
 		self.layers = []
+		self.norm_layers = []
 		for i in range(self.num_layers):
 			if i < self.num_layers//2:
 				self.layers.append(GraphSageLayer(
@@ -150,6 +151,10 @@ class PyramidGraphSage(nn.Module):
 					feature_sizes[i]+feature_sizes[self.num_layers-i]+feature_sizes[self.num_layers-i-1],
 					feature_sizes[i+1],
 					representation_sizes[i]))
+			if batchnorm_dim:
+				self.norm_layers.append(nn.BatchNorm1d(batchnorm_dim))
+			else:
+				self.norm_layers.append(lambda x: x)
 				
 	def cuda(self):
 		self.layers = list(map(lambda x: x.cuda(), self.layers))
@@ -162,14 +167,13 @@ class PyramidGraphSage(nn.Module):
 		for i in range(self.num_layers):
 			if i < self.num_layers//2:
 				stashed_results.append(fpass_graph)
-				fpass_graph = self.layers[i]((fpass_graph, adj))
 			elif i == self.num_layers//2:
 				# Concatenate skip connection inputs for pyramid "downward slope"
 				fpass_graph = torch.cat((fpass_graph, stashed_results[self.num_layers-i-1]), dim=2)
-				fpass_graph = self.layers[i]((fpass_graph, adj))
 			else:
 				# Concatenate skip connection inputs for pyramid "downward slope"
 				fpass_graph = torch.cat((fpass_graph, stashed_results[self.num_layers-i], stashed_results[self.num_layers-i-1]), dim=2)
-				fpass_graph = self.layers[i]((fpass_graph, adj))
+			fpass_graph = self.layers[i]((fpass_graph, adj))
+			fpass_graph = self.norm_layers[i](fpass_graph)
 		return fpass_graph
 
