@@ -152,7 +152,7 @@ class PyramidGraphSage(nn.Module):
 					feature_sizes[i+1],
 					representation_sizes[i]))
 			if batchnorm_dim:
-				self.norm_layers.append(nn.BatchNorm1d(batchnorm_dim))
+				self.norm_layers.append(nn.BatchNorm1d(batchnorm_dim, momentum=0.01))
 				
 
 	def cuda(self):
