@@ -229,14 +229,9 @@ def train(file_names, epochs, test_files):
 			outputs = sdf_model((nodes, adjs))
 
 			loss = criterion(outputs, labels)
-
-			if i%2 == 0:
-				grad_loss = loss
-			else:
-				grad_loss += loss
+			loss.backward()
 		
 			if i % 2 == 1:
-				grad_loss.backward()
 				optimizer.step()
 				optimizer.zero_grad()
 	
