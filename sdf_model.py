@@ -210,6 +210,7 @@ def train(file_names, epochs, test_files):
 	open("log.txt", "a").write("\nModel initialized!")
 	running_loss = 0.0
 	total_loss = 0.0
+
 	for epoch in range(epochs):
 		sdf_model.train()
 		trainloader.shuffle()
@@ -228,9 +229,14 @@ def train(file_names, epochs, test_files):
 			outputs = sdf_model((nodes, adjs))
 
 			loss = criterion(outputs, labels)
-			loss.backward()
+
+			if i%2 == 0:
+				grad_loss = loss
+			else:
+				grad_loss += loss
 		
 			if i % 2 == 1:
+				grad_loss.backward()
 				optimizer.step()
 				optimizer.zero_grad()
 	
