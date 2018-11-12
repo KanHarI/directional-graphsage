@@ -142,8 +142,8 @@ class MoleculeDataset:
 		# A tuple of (nodes, adjacency matrix, value)
 		return (*self.molecules[idx], torch.tensor(0) if self.molecules[idx].value<0 else torch.tensor(1))
 
-INTERMEDIATE_LAYER_SIZE = 20
-NUM_LAYERS = 14
+INTERMEDIATE_LAYER_SIZE = 40
+NUM_LAYERS = 20
 
 class SdfModel(nn.Module):
 	def __init__(self, iterations=8):
