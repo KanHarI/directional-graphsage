@@ -133,6 +133,9 @@ class MoleculeDataset:
 			
 			yield batch_nodes, batch_adjs, vals
 			idx += batch_size
+			
+			if idx+batch_size > l: # Constant batch size to stabilize loss and batchNorm
+				return
 
 
 	def __getitem__(self, idx):
@@ -208,6 +211,7 @@ def train(file_names, epochs, test_files):
 	running_loss = 0.0
 	total_loss = 0.0
 	for epoch in range(epochs):
+		sdf_model.train()
 		trainloader.shuffle()
 		for i, data in enumerate(trainloader.batch_generator(256)):
 			# get the inputs
@@ -245,6 +249,7 @@ def train(file_names, epochs, test_files):
 		false_negatives = 0
 		running_loss = 0.0
 
+		sdf_model.eval()
 		testloader.shuffle()
 		for i, data in enumerate(testloader.batch_generator(256)):
 			nodes, adjs, labels = data
@@ -256,7 +261,6 @@ def train(file_names, epochs, test_files):
 			optimizer.zero_grad()
 			outputs = sdf_model((nodes, adjs))
 			loss = criterion(outputs, labels)
-			loss.backward()
 			running_loss += loss.item()
 			for j in range(outputs.shape[0]):
 				if outputs[j][0] > outputs[j][1]:
