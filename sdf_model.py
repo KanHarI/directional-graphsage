@@ -239,6 +239,11 @@ def train(file_names, epochs, test_files):
 					  (epoch + 1, i + 1, running_loss))
 				running_loss = 0.0
 
+		if (epoch+1)%2 == 0:
+			torch.save(model.state_dict(), 'even.bin')
+		else:
+			torch.save(model.state_dict(), 'odd.bin')
+
 		print("Total epoch loss: %f" % (total_loss,))
 		open("log.txt", "a").write("\nepoch: %d, Total epoch loss: %f" % (epoch+1, total_loss))
 		total_loss = 0.0
@@ -251,29 +256,30 @@ def train(file_names, epochs, test_files):
 
 		sdf_model.eval()
 		testloader.shuffle()
-		for i, data in enumerate(testloader.batch_generator(256)):
-			nodes, adjs, labels = data
-			if torch.cuda.is_available():
-				nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
-			nodes = nodes.to_dense()
-			adjs = adjs.to_dense()
-
-			optimizer.zero_grad()
-			outputs = sdf_model((nodes, adjs))
-			loss = criterion(outputs, labels)
-			running_loss += loss.item()
-			for j in range(outputs.shape[0]):
-				if outputs[j][0] > outputs[j][1]:
-					if labels[j] == 0:
-						true_negatives += 1
+		with torch.no_grad():
+			for i, data in enumerate(testloader.batch_generator(256)):
+				nodes, adjs, labels = data
+				if torch.cuda.is_available():
+					nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
+				nodes = nodes.to_dense()
+				adjs = adjs.to_dense()
+	
+				optimizer.zero_grad()
+				outputs = sdf_model((nodes, adjs))
+				loss = criterion(outputs, labels)
+				running_loss += loss.item()
+				for j in range(outputs.shape[0]):
+					if outputs[j][0] > outputs[j][1]:
+						if labels[j] == 0:
+							true_negatives += 1
+						else:
+							false_negatives += 1
 					else:
-						false_negatives += 1
-				else:
-					if labels[j] == 0:
-						false_positives += 1
-					else:
-						true_positives += 1
-			print("[test,\t%d]: loss: %f" % (i, loss.item()))
+						if labels[j] == 0:
+							false_positives += 1
+						else:
+							true_positives += 1
+				print("[test,\t%d]: loss: %f" % (i, loss.item()))
 		print("epoch:%d, loss:%f, true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d" % (epoch+1, running_loss, true_positives, true_negatives, false_positives, false_negatives))
 		open("log.txt", "a").write("\nepoch:%d, loss:%f, true_pos: %d, true_neg: %d, false_pos: %d, false_neg: %d\n" % (epoch+1, running_loss, true_positives, true_negatives, false_positives, false_negatives))
 		running_loss = 0.0
