@@ -240,9 +240,9 @@ def train(file_names, epochs, test_files):
 				running_loss = 0.0
 
 		if (epoch+1)%2 == 0:
-			torch.save(model.state_dict(), 'even.bin')
+			torch.save(sdf_model.state_dict(), 'even.bin')
 		else:
-			torch.save(model.state_dict(), 'odd.bin')
+			torch.save(sdf_model.state_dict(), 'odd.bin')
 
 		print("Total epoch loss: %f" % (total_loss,))
 		open("log.txt", "a").write("\nepoch: %d, Total epoch loss: %f" % (epoch+1, total_loss))
