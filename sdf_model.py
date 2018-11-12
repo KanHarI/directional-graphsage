@@ -213,7 +213,8 @@ def train(file_names, epochs, test_files):
 	for epoch in range(epochs):
 		sdf_model.train()
 		trainloader.shuffle()
-		for i, data in enumerate(trainloader.batch_generator(256)):
+		optimizer.zero_grad()
+		for i, data in enumerate(trainloader.batch_generator(128)):
 			# get the inputs
 			nodes, adjs, labels = data
 			if torch.cuda.is_available():
@@ -222,14 +223,16 @@ def train(file_names, epochs, test_files):
 			adjs = adjs.to_dense()
 	
 			# zero the parameter gradients
-			optimizer.zero_grad()
 	
 			# forward + backward + optimize
 			outputs = sdf_model((nodes, adjs))
 
 			loss = criterion(outputs, labels)
 			loss.backward()
-			optimizer.step()
+		
+			if i % 2 == 1:
+				optimizer.step()
+				optimizer.zero_grad()
 	
 			# print statistics
 			running_loss += loss.item()
@@ -238,6 +241,8 @@ def train(file_names, epochs, test_files):
 				print('[%d,\t%d] loss: %f' %
 					  (epoch + 1, i + 1, running_loss))
 				running_loss = 0.0
+
+		optimizer.zero_grad()
 
 		if (epoch+1)%2 == 0:
 			torch.save(sdf_model.state_dict(), 'even.bin')
@@ -257,7 +262,7 @@ def train(file_names, epochs, test_files):
 		sdf_model.eval()
 		testloader.shuffle()
 		with torch.no_grad():
-			for i, data in enumerate(testloader.batch_generator(256)):
+			for i, data in enumerate(testloader.batch_generator(128)):
 				nodes, adjs, labels = data
 				if torch.cuda.is_available():
 					nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
