@@ -231,7 +231,7 @@ def train(file_names, epochs, test_files):
 			loss = criterion(outputs, labels)
 			loss.backward()
 		
-			if i % 2 == 1:
+			if i % 16 == 15:
 				optimizer.step()
 				optimizer.zero_grad()
 	

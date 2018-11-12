@@ -130,6 +130,7 @@ class PyramidGraphSage(nn.Module):
 		assert num_layers%2 == 0
 		assert num_layers == len(feature_sizes)-1
 		super().__init__()
+		self.feature_sizes = feature_sizes
 		self.num_layers = num_layers
 		if representation_sizes is None:
 			representation_sizes = feature_sizes[:-1]
@@ -152,7 +153,7 @@ class PyramidGraphSage(nn.Module):
 					feature_sizes[i+1],
 					representation_sizes[i]))
 			if batchnorm_dim:
-				self.norm_layers.append(nn.BatchNorm1d(batchnorm_dim, momentum=0.01))
+				self.norm_layers.append(nn.BatchNorm1d(1, momentum=0.01))
 				
 
 	def cuda(self):
@@ -175,6 +176,7 @@ class PyramidGraphSage(nn.Module):
 				fpass_graph = torch.cat((fpass_graph, stashed_results[self.num_layers-i], stashed_results[self.num_layers-i-1]), dim=2)
 			fpass_graph = self.layers[i]((fpass_graph, adj))
 			if self.norm_layers:
-				fpass_graph = self.norm_layers[i](fpass_graph)
+				fpass_graph = self.norm_layers[i](fpass_graph.view(-1,1,batchnorm_dim,self.feature_sizes[i+1]))
+				fpass_graph = fpass_graph.view(-1,*batchnorm_dim)
 		return fpass_graph
 
