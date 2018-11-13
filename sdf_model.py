@@ -150,7 +150,12 @@ NUM_LAYERS = 14
 class SdfModel(nn.Module):
 	def __init__(self, iterations=8):
 		super().__init__()
-		self.network = model.PyramidGraphSage(NUM_LAYERS, [atom_dim] + [INTERMEDIATE_LAYER_SIZE]*NUM_LAYERS, BATCH_SIZE, MAX_MOLECULE_SIZE, batchnorm=True)
+		self.network = model.PyramidGraphSage(
+			NUM_LAYERS,
+			[atom_dim] + [INTERMEDIATE_LAYER_SIZE]*(NUM_LAYERS//2) + [INTERMEDIATE_LAYER_SIZE//2]*(NUM_LAYERS//2),
+			BATCH_SIZE,
+			MAX_MOLECULE_SIZE,
+			batchnorm=True)
 		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE//4)
 		self.node_to_addresses = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE//4)
 		self.attention = nn.LSTM(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//2, num_layers=2)
