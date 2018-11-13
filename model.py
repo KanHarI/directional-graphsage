@@ -9,7 +9,7 @@ import copy
 
 
 class GraphSageLayer(nn.Module):
-	def __init__(self, input_dim, output_dim, representation_size, iterations=3):
+	def __init__(self, input_dim, output_dim, representation_size, batch_size, max_nodes, iterations=3):
 		# input_dim: size of vector representation of incoming nodes
 		# output_dim: size of node output dimension per node
 		# representation_size: size of internal hidden layers
@@ -30,8 +30,14 @@ class GraphSageLayer(nn.Module):
 		self.other_to_addr = nn.Linear(input_dim, representation_size)
 		self.out_to_addr = nn.Linear(input_dim, representation_size)
 		self.node_to_rep = nn.Linear(input_dim, representation_size)
-		self.attention = nn.Linear(representation_size*3, representation_size*3)
+		self.attention = nn.LSTM(representation_size*2, representation_size*2)
 		self.node_update = nn.Linear(3*representation_size, output_dim)
+		self.addr0 = torch.zeros((representation_size,), requires_grad=True)
+		self.h0 = (torch.zeros((1,representation_size*2), requires_grad=True),torch.zeros((1,representation_size*2), requires_grad=True))
+		self.ones_b = torch.ones((batch_size,))
+		self.ones_i = torch.ones((max_nodes,))
+		self.batch_size = batch_size
+		self.max_nodes = max_nodes
 
 	def cuda(self):
 		self.other_representation = self.other_representation.cuda()
@@ -40,6 +46,9 @@ class GraphSageLayer(nn.Module):
 		self.node_to_rep = self.node_to_rep.cuda()
 		self.attention = self.attention.cuda()
 		self.node_update = self.node_update.cuda()
+		self.h0 = tuple(map(lambda x: x.cuda, self.h0))
+		self.ones_b = self.ones_b.cuda()
+		self.ones_i = self.ones_i.cuda()
 		return self
 
 	def forward(self, nodes_adj):
@@ -53,32 +62,40 @@ class GraphSageLayer(nn.Module):
 		node_representation = self.other_representation(nodes_adj[0])
 		node_addr = F.normalize(self.other_to_addr(nodes_adj[0]), dim=2)
 
-		o = torch.zeros((*node_addr.shape[:2], self.representation_size))
-		if torch.cuda.is_available():
-			o = o.cuda()
-		addr = o
-		hidden = o
+		addr0 = torch.einsum('a,b,i->bia', (self.addr0, self.ones_b, self.ones_i))
+		hidden0 = tuple(map(lambda x: torch.einsum('lv,b,i->lbiv', (x, self.ones_b, self.ones_i)), self.h0))
+
+		addr = addr0
+		hidden = hidden0
+
 		for i in range(self.iterations):
 			dp = torch.einsum('bja,bia->bij', (node_addr, addr))
 			dp = torch.exp(dp) # softmax based attention
 			dp = dp*nodes_adj[1] # of course disconnected nodes should not affect each other...
 			dp = F.normalize(dp, dim=2)
 			in_src = torch.einsum('bjv,bij->biv', (node_representation, dp))
-			out = self.attention(torch.cat((in_src, addr, hidden), dim=2))
-			in_aggregated, addr, hidden = out[:,:,:self.representation_size] ,out[:,:,self.representation_size:self.representation_size*2], out[:,:,self.representation_size*2:]
-			hidden = F.relu(hidden)
+			in_src = torch.cat((in_src, addr), dim=2).view(1,self.batch_size*self.max_nodes,self.representation_size*2)
+			hidden = tuple(map(lambda x: x.view(1, self.batch_size*self.max_nodes, self.representation_size*2), hidden))
+			out, hidden = self.attention(in_src,hidden)
+			hidden = tuple(map(lambda x: x.view(1,self.batch_size,self.max_nodes,self.representation_size*2), hidden))
+			out = out.view(self.batch_size,self.max_nodes,self.representation_size*2)
+			in_aggregated, addr = out[:,:,:self.representation_size] ,out[:,:,self.representation_size:]
 
-		addr = o
-		hidden = o
+		addr = addr0
+		hidden = hidden0
+
 		for i in range(self.iterations):
 			dp = torch.einsum('bja,bia->bij', (node_addr, addr))
 			dp = torch.exp(dp) # softmax based attention
 			dp = dp*nodes_adj[1] # of course disconnected nodes should not affect each other...
 			dp = F.normalize(dp, dim=1)
-			out_src = torch.einsum('biv,bij->bjv', (node_representation, dp))
-			out = self.attention(torch.cat((out_src, addr, hidden), dim=2))
-			out_aggregated, addr, hidden = out[:,:,:self.representation_size] ,out[:,:,self.representation_size:self.representation_size*2], out[:,:,self.representation_size*2:]
-			hidden = F.relu(hidden)
+			in_src = torch.einsum('biv,bij->bjv', (node_representation, dp))
+			in_src = torch.cat((in_src, addr), dim=2).view(1,self.batch_size*self.max_nodes,self.representation_size*2)
+			hidden = tuple(map(lambda x: x.view(1, self.batch_size*self.max_nodes, self.representation_size*2), hidden))
+			out, hidden = self.attention(in_src,hidden)
+			hidden = tuple(map(lambda x: x.view(1,self.batch_size,self.max_nodes,self.representation_size*2), hidden))
+			out = out.view(self.batch_size,self.max_nodes,self.representation_size*2)
+			out_aggregated, addr, = out[:,:,:self.representation_size] ,out[:,:,self.representation_size:]
 		
 		in_aggregated = F.relu(in_aggregated)
 		node_id_rep = F.relu(self.node_to_rep(nodes_adj[0]))
@@ -126,7 +143,7 @@ class PyramidGraphSage(nn.Module):
 	# I->L0->L1->L6->L7...
 	# Effectively "training one layer at a time" continously
 
-	def __init__(self, num_layers, feature_sizes, representation_sizes=None, batchnorm_dim=None):
+	def __init__(self, num_layers, feature_sizes, batch_size, max_nodes, representation_sizes=None, batchnorm=False):
 		assert num_layers%2 == 0
 		assert num_layers == len(feature_sizes)-1
 		super().__init__()
@@ -136,25 +153,31 @@ class PyramidGraphSage(nn.Module):
 			representation_sizes = feature_sizes[:-1]
 		self.layers = []
 		self.norm_layers = []
+		self.batch_size = batch_size
 		for i in range(self.num_layers):
 			if i < self.num_layers//2:
 				self.layers.append(GraphSageLayer(
 					feature_sizes[i],
 					feature_sizes[i+1],
-					representation_sizes[i]))
+					representation_sizes[i],
+					batch_size,
+					max_nodes))
 			elif i == self.num_layers//2:
 				self.layers.append(GraphSageLayer(
 					feature_sizes[i]+feature_sizes[self.num_layers-i-1],
 					feature_sizes[i+1],
-					representation_sizes[i]))
+					representation_sizes[i],
+					batch_size,
+					max_nodes))
 			else:
 				self.layers.append(GraphSageLayer(
 					feature_sizes[i]+feature_sizes[self.num_layers-i]+feature_sizes[self.num_layers-i-1],
 					feature_sizes[i+1],
-					representation_sizes[i]))
-			if batchnorm_dim:
+					representation_sizes[i],
+					batch_size,
+					max_nodes))
+			if batchnorm:
 				self.norm_layers.append(nn.BatchNorm2d(1, momentum=0.01))
-				self.batchnorm_dim = batchnorm_dim
 				
 
 	def cuda(self):
@@ -177,7 +200,7 @@ class PyramidGraphSage(nn.Module):
 				fpass_graph = torch.cat((fpass_graph, stashed_results[self.num_layers-i], stashed_results[self.num_layers-i-1]), dim=2)
 			fpass_graph = self.layers[i]((fpass_graph, adj))
 			if self.norm_layers:
-				fpass_graph = self.norm_layers[i](fpass_graph.view(-1,1,self.batchnorm_dim,self.feature_sizes[i+1]))
-				fpass_graph = fpass_graph.view(-1,self.batchnorm_dim,self.feature_sizes[i+1])
+				fpass_graph = self.norm_layers[i](fpass_graph.view(-1,1,self.batch_size,self.feature_sizes[i+1]))
+				fpass_graph = fpass_graph.view(-1,self.batch_size,self.feature_sizes[i+1])
 		return fpass_graph
 

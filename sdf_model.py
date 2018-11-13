@@ -150,17 +150,18 @@ NUM_LAYERS = 14
 class SdfModel(nn.Module):
 	def __init__(self, iterations=8):
 		super().__init__()
-		self.network = model.PyramidGraphSage(NUM_LAYERS, [atom_dim] + [INTERMEDIATE_LAYER_SIZE]*NUM_LAYERS, batchnorm_dim=MAX_MOLECULE_SIZE)
+		self.network = model.PyramidGraphSage(NUM_LAYERS, [atom_dim] + [INTERMEDIATE_LAYER_SIZE]*NUM_LAYERS, BATCH_SIZE, MAX_MOLECULE_SIZE, batchnorm=True)
 		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE//4)
 		self.node_to_addresses = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE//4)
 		self.attention = nn.LSTM(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//2, num_layers=2)
 		self.iterations = iterations
-		self.h0 = (torch.zeros((2,BATCH_SIZE,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True),torch.zeros((2,BATCH_SIZE,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True))
-		self.addr0 = torch.zeros((BATCH_SIZE, INTERMEDIATE_LAYER_SIZE//4), requires_grad=True)
+		self.h0 = (torch.zeros((2,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True),torch.zeros((2,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True))
+		self.addr0 = torch.zeros((INTERMEDIATE_LAYER_SIZE//4), requires_grad=True)
 		self.final_layer_1 = nn.Linear(INTERMEDIATE_LAYER_SIZE//4, INTERMEDIATE_LAYER_SIZE//2)
 		self.final_layer_2 = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
 		self.final_layer_3 = nn.Linear(INTERMEDIATE_LAYER_SIZE//4, INTERMEDIATE_LAYER_SIZE//8)
 		self.final_layer_4 = nn.Linear(INTERMEDIATE_LAYER_SIZE//8, 2)
+		self.ones = torch.ones((BATCH_SIZE,))
 			
 
 	def cuda(self):
@@ -174,13 +175,14 @@ class SdfModel(nn.Module):
 		self.final_layer_4 = self.final_layer_4.cuda()
 		self.h0 = tuple(map(lambda x: x.cuda(), self.h0))
 		self.addr0 = self.addr0.cuda()
+		self.ones = self.ones.cuda()
 		return self
 
 	def forward(self, nodes_adj):
 		nodes = self.network(nodes_adj)
 
-		addr = self.addr0
-		hidden = self.h0
+		addr = torch.einsum('b,a->ba', (self.ones, self.addr0))
+		hidden = tuple(map(lambda x: torch.einsum('b,lv->lbv', (self.ones, x)), self.h0))
 
 		# Extracting macro features from nodes
 		nodes_rep = self.node_to_representations(nodes)
