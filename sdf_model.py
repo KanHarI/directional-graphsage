@@ -43,6 +43,8 @@ atom_dim = len(atoms) + 2 # +2 for mass delta and charge delta
 # atom_dim is 66
 
 MAX_MOLECULE_SIZE = 128
+BATCH_SIZE = 128
+MINIBATCHES_PER_STEP = 16
 
 def mol_to_sparse(molecule):
 	nodes_idx = [(MAX_MOLECULE_SIZE-1, atom_dim-1)]
@@ -110,7 +112,7 @@ class MoleculeDataset:
 		tmp = itertools.chain.from_iterable(map(lambda x: x.molecules, tmp))
 		tmp = filter(lambda x: x.header.atom_num < MAX_MOLECULE_SIZE, tmp)
 		self.molecules = list(map(lambda x: (mol_to_sparse(x), torch.tensor(0) if x.value<0 else torch.tensor(1)), tmp))
-		del tmp # Free up a lot of RAM explicitly here
+		del tmp # explicitly Free up a lot of RAM here
 
 	def __len__(self):
 		return len(self.molecules)
@@ -149,12 +151,16 @@ class SdfModel(nn.Module):
 	def __init__(self, iterations=8):
 		super().__init__()
 		self.network = model.PyramidGraphSage(NUM_LAYERS, [atom_dim] + [INTERMEDIATE_LAYER_SIZE]*NUM_LAYERS, batchnorm_dim=MAX_MOLECULE_SIZE)
-		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE)
-		self.node_to_addresses = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE)
-		self.attention = nn.Linear(INTERMEDIATE_LAYER_SIZE*3, INTERMEDIATE_LAYER_SIZE*3)
-		self.final_layer_1 = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE)
-		self.final_layer_2 = nn.Linear(INTERMEDIATE_LAYER_SIZE, 2)
+		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE//4)
+		self.node_to_addresses = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE//4)
+		self.attention = nn.LSTM(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//2, num_layers=2)
 		self.iterations = iterations
+		self.h0 = (torch.zeros((2,BATCH_SIZE,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True),torch.zeros((2,BATCH_SIZE,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True))
+		self.addr0 = torch.zeros((BATCH_SIZE, INTERMEDIATE_LAYER_SIZE//4), requires_grad=True)
+		self.final_layer_1 = nn.Linear(INTERMEDIATE_LAYER_SIZE//4, INTERMEDIATE_LAYER_SIZE//2)
+		self.final_layer_2 = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
+		self.final_layer_3 = nn.Linear(INTERMEDIATE_LAYER_SIZE//4, INTERMEDIATE_LAYER_SIZE//8)
+		self.final_layer_4 = nn.Linear(INTERMEDIATE_LAYER_SIZE//8, 2)
 			
 
 	def cuda(self):
@@ -164,16 +170,17 @@ class SdfModel(nn.Module):
 		self.attention = self.attention.cuda()
 		self.final_layer_1 = self.final_layer_1.cuda()
 		self.final_layer_2 = self.final_layer_2.cuda()
+		self.final_layer_3 = self.final_layer_3.cuda()
+		self.final_layer_4 = self.final_layer_4.cuda()
+		self.h0 = tuple(map(lambda x: x.cuda(), self.h0))
+		self.addr0 = self.addr0.cuda()
 		return self
 
 	def forward(self, nodes_adj):
 		nodes = self.network(nodes_adj)
 
-		o = torch.zeros((nodes.shape[0], INTERMEDIATE_LAYER_SIZE))
-		if torch.cuda.is_available():
-			o = o.cuda()
-		addr = o
-		hidden = o
+		addr = self.addr0
+		hidden = self.h0
 
 		# Extracting macro features from nodes
 		nodes_rep = self.node_to_representations(nodes)
@@ -183,9 +190,8 @@ class SdfModel(nn.Module):
 			dp = torch.exp(dp) # softmax based attention
 			dp = F.normalize(dp, dim=1)
 			in_src = torch.einsum('bjv,bj->bv', (nodes_rep, dp))
-			out = self.attention(torch.cat((in_src, addr, hidden), dim=1))
-			in_aggregated, addr, hidden = out[:,:INTERMEDIATE_LAYER_SIZE] ,out[:,INTERMEDIATE_LAYER_SIZE:INTERMEDIATE_LAYER_SIZE*2], out[:,INTERMEDIATE_LAYER_SIZE*2:]
-			hidden = F.relu(hidden)
+			out, hidden = self.attention(torch.cat((in_src, addr), dim=1).view(1,BATCH_SIZE,INTERMEDIATE_LAYER_SIZE//2), hidden)
+			in_aggregated, addr = out[0,:,:INTERMEDIATE_LAYER_SIZE//4] ,out[0,:,INTERMEDIATE_LAYER_SIZE//4:]
 
 		return self.final_layer_2(F.relu(self.final_layer_1(in_aggregated)))
 
@@ -215,7 +221,7 @@ def train(file_names, epochs, test_files):
 		sdf_model.train()
 		trainloader.shuffle()
 		optimizer.zero_grad()
-		for i, data in enumerate(trainloader.batch_generator(128)):
+		for i, data in enumerate(trainloader.batch_generator(BATCH_SIZE)):
 			# get the inputs
 			nodes, adjs, labels = data
 			if torch.cuda.is_available():
@@ -231,7 +237,7 @@ def train(file_names, epochs, test_files):
 			loss = criterion(outputs, labels)
 			loss.backward()
 		
-			if i % 16 == 15:
+			if (i + 1) % MINIBATCHES_PER_STEP == 0:
 				optimizer.step()
 				optimizer.zero_grad()
 	
@@ -263,7 +269,7 @@ def train(file_names, epochs, test_files):
 		sdf_model.eval()
 		testloader.shuffle()
 		with torch.no_grad():
-			for i, data in enumerate(testloader.batch_generator(128)):
+			for i, data in enumerate(testloader.batch_generator(BATCH_SIZE)):
 				nodes, adjs, labels = data
 				if torch.cuda.is_available():
 					nodes, adjs, labels = nodes.cuda(), adjs.cuda(), labels.cuda()
