@@ -156,8 +156,8 @@ class SdfModel(nn.Module):
 			BATCH_SIZE,
 			MAX_MOLECULE_SIZE,
 			batchnorm=True)
-		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE//4)
-		self.node_to_addresses = nn.Linear(INTERMEDIATE_LAYER_SIZE, INTERMEDIATE_LAYER_SIZE//4)
+		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
+		self.node_to_addresses = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
 		self.attention = nn.LSTM(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//2, num_layers=2)
 		self.iterations = iterations
 		self.h0 = (torch.zeros((2,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True),torch.zeros((2,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True))
