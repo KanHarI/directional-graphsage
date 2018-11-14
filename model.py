@@ -47,7 +47,7 @@ class GraphSageLayer(nn.Module):
         self.attention = self.attention.cuda()
         self.node_update = self.node_update.cuda()
         self.addr0 = self.addr0.cuda()
-        self.h0 = tuple(map(lambda x: x.cuda(), self.h0))
+        self.h0 = self.h0.cuda()
         self.ones_b = self.ones_b.cuda()
         self.ones_i = self.ones_i.cuda()
         return self
