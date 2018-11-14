@@ -30,10 +30,10 @@ class GraphSageLayer(nn.Module):
         self.other_to_addr = nn.Linear(input_dim, representation_size)
         self.out_to_addr = nn.Linear(input_dim, representation_size)
         self.node_to_rep = nn.Linear(input_dim, representation_size)
-        self.attention = nn.LSTM(representation_size*2, representation_size*2)
+        self.attention = nn.Linear(representation_size*3, representation_size*3)
         self.node_update = nn.Linear(3*representation_size, output_dim)
         self.addr0 = torch.zeros((representation_size,), requires_grad=True)
-        self.h0 = (torch.zeros((1,representation_size*2), requires_grad=True),torch.zeros((1,representation_size*2), requires_grad=True))
+        self.h0 = torch.zeros((representation_size,), requires_grad=True)
         self.ones_b = torch.ones((batch_size,))
         self.ones_i = torch.ones((max_nodes,))
         self.batch_size = batch_size
@@ -64,7 +64,7 @@ class GraphSageLayer(nn.Module):
         node_addr = F.normalize(self.other_to_addr(nodes_adj[0]), dim=2)
 
         addr0 = torch.einsum('a,b,i->bia', (self.addr0, self.ones_b, self.ones_i))
-        hidden0 = tuple(map(lambda x: torch.einsum('lv,b,i->lbiv', (x, self.ones_b, self.ones_i)), self.h0))
+        hidden0 = torch.einsum('v,b,i->biv', (self.h0, self.ones_b, self.ones_i))
 
         addr = addr0
         hidden = hidden0
@@ -75,12 +75,9 @@ class GraphSageLayer(nn.Module):
             dp = dp*nodes_adj[1] # of course disconnected nodes should not affect each other...
             dp = F.normalize(dp, dim=2)
             in_src = torch.einsum('bjv,bij->biv', (node_representation, dp))
-            in_src = torch.cat((in_src, addr), dim=2).view(1,self.batch_size*self.max_nodes,self.representation_size*2)
-            hidden = tuple(map(lambda x: x.view(1, self.batch_size*self.max_nodes, self.representation_size*2), hidden))
-            out, hidden = self.attention(in_src,hidden)
-            hidden = tuple(map(lambda x: x.view(1,self.batch_size,self.max_nodes,self.representation_size*2), hidden))
-            out = out.view(self.batch_size,self.max_nodes,self.representation_size*2)
-            in_aggregated, addr = out[:,:,:self.representation_size] ,out[:,:,self.representation_size:]
+            out = self.attention(torch.cat((in_src, addr, hidden), dim=2))
+            in_aggregated, addr, hidden = out[:,:,:self.representation_size], out[:,:,self.representation_size:self.representation_size*2], out[:,:,self.representation_size*2:]
+            hidden = F.relu(hidden)
 
         addr = addr0
         hidden = hidden0
@@ -91,12 +88,9 @@ class GraphSageLayer(nn.Module):
             dp = dp*nodes_adj[1] # of course disconnected nodes should not affect each other...
             dp = F.normalize(dp, dim=1)
             in_src = torch.einsum('biv,bij->bjv', (node_representation, dp))
-            in_src = torch.cat((in_src, addr), dim=2).view(1,self.batch_size*self.max_nodes,self.representation_size*2)
-            hidden = tuple(map(lambda x: x.view(1, self.batch_size*self.max_nodes, self.representation_size*2), hidden))
-            out, hidden = self.attention(in_src,hidden)
-            hidden = tuple(map(lambda x: x.view(1,self.batch_size,self.max_nodes,self.representation_size*2), hidden))
-            out = out.view(self.batch_size,self.max_nodes,self.representation_size*2)
-            out_aggregated, addr, = out[:,:,:self.representation_size] ,out[:,:,self.representation_size:]
+            out = self.attention(torch.cat((in_src, addr, hidden), dim=2))
+            out_aggregated, addr, hidden = out[:,:,:self.representation_size], out[:,:,self.representation_size:self.representation_size*2], out[:,:,self.representation_size*2:]
+            hidden = F.relu(hidden)
         
         in_aggregated = F.relu(in_aggregated)
         node_id_rep = F.relu(self.node_to_rep(nodes_adj[0]))

@@ -158,9 +158,9 @@ class SdfModel(nn.Module):
 			batchnorm=True)
 		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
 		self.node_to_addresses = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
-		self.attention = nn.LSTM(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//2, num_layers=2)
+		self.attention = nn.LSTM(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//2)
 		self.iterations = iterations
-		self.h0 = (torch.zeros((2,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True),torch.zeros((2,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True))
+		self.h0 = (torch.zeros((1,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True),torch.zeros((1,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True))
 		self.addr0 = torch.zeros((INTERMEDIATE_LAYER_SIZE//4), requires_grad=True)
 		self.final_layer_1 = nn.Linear(INTERMEDIATE_LAYER_SIZE//4, INTERMEDIATE_LAYER_SIZE//2)
 		self.final_layer_2 = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
@@ -245,9 +245,9 @@ def train(file_names, epochs, test_files):
 			loss = criterion(outputs, labels)
 			loss.backward()
 		
-			#if (i + 1) % MINIBATCHES_PER_STEP == 0:
-			optimizer.step()
-			optimizer.zero_grad()
+			if (i + 1) % MINIBATCHES_PER_STEP == 0:
+			 optimizer.step()
+			 optimizer.zero_grad()
 	
 			# print statistics
 			running_loss += loss.item()
