@@ -44,7 +44,6 @@ atom_dim = len(atoms) + 2 # +2 for mass delta and charge delta
 
 MAX_MOLECULE_SIZE = 128
 BATCH_SIZE = 128
-MINIBATCHES_PER_STEP = 16
 
 def mol_to_sparse(molecule):
 	nodes_idx = [(MAX_MOLECULE_SIZE-1, atom_dim-1)]
@@ -144,6 +143,7 @@ class MoleculeDataset:
 		# A tuple of (nodes, adjacency matrix, value)
 		return (*self.molecules[idx], torch.tensor(0) if self.molecules[idx].value<0 else torch.tensor(1))
 
+MINIBATCHES_PER_STEP = 1
 INTERMEDIATE_LAYER_SIZE = 40
 NUM_LAYERS = 20
 
