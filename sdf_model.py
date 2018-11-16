@@ -148,7 +148,7 @@ INTERMEDIATE_LAYER_SIZE = 40
 NUM_LAYERS = 20
 
 class SdfModel(nn.Module):
-	def __init__(self, iterations=8):
+	def __init__(self, iterations=3):
 		super().__init__()
 		self.network = model.PyramidGraphSage(
 			NUM_LAYERS,
