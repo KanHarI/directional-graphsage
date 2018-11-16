@@ -145,7 +145,7 @@ class MoleculeDataset:
 		return (*self.molecules[idx], torch.tensor(0) if self.molecules[idx].value<0 else torch.tensor(1))
 
 INTERMEDIATE_LAYER_SIZE = 40
-NUM_LAYERS = 14
+NUM_LAYERS = 20
 
 class SdfModel(nn.Module):
 	def __init__(self, iterations=8):
@@ -158,9 +158,9 @@ class SdfModel(nn.Module):
 			batchnorm=True)
 		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
 		self.node_to_addresses = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
-		self.attention = nn.LSTM(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//2)
+		self.attention = nn.Linear(3*INTERMEDIATE_LAYER_SIZE//4, 3*INTERMEDIATE_LAYER_SIZE//4)
 		self.iterations = iterations
-		self.h0 = (torch.zeros((1,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True),torch.zeros((1,INTERMEDIATE_LAYER_SIZE//2), requires_grad=True))
+		self.h0 = torch.zeros((INTERMEDIATE_LAYER_SIZE//4,), requires_grad=True)
 		self.addr0 = torch.zeros((INTERMEDIATE_LAYER_SIZE//4), requires_grad=True)
 		self.final_layer_1 = nn.Linear(INTERMEDIATE_LAYER_SIZE//4, INTERMEDIATE_LAYER_SIZE//2)
 		self.final_layer_2 = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
@@ -178,7 +178,7 @@ class SdfModel(nn.Module):
 		self.final_layer_2 = self.final_layer_2.cuda()
 		self.final_layer_3 = self.final_layer_3.cuda()
 		self.final_layer_4 = self.final_layer_4.cuda()
-		self.h0 = tuple(map(lambda x: x.cuda(), self.h0))
+		self.h0 = self.h0.cuda()
 		self.addr0 = self.addr0.cuda()
 		self.ones = self.ones.cuda()
 		return self
@@ -187,7 +187,7 @@ class SdfModel(nn.Module):
 		nodes = self.network(nodes_adj)
 
 		addr = torch.einsum('b,a->ba', (self.ones, self.addr0))
-		hidden = tuple(map(lambda x: torch.einsum('b,lv->lbv', (self.ones, x)), self.h0))
+		hidden = torch.einsum('b,v->bv', (self.ones, self.h0))
 
 		# Extracting macro features from nodes
 		nodes_rep = self.node_to_representations(nodes)
@@ -197,8 +197,8 @@ class SdfModel(nn.Module):
 			dp = torch.exp(dp) # softmax based attention
 			dp = F.normalize(dp, dim=1)
 			in_src = torch.einsum('bjv,bj->bv', (nodes_rep, dp))
-			out, hidden = self.attention(torch.cat((in_src, addr), dim=1).view(1,BATCH_SIZE,INTERMEDIATE_LAYER_SIZE//2), hidden)
-			in_aggregated, addr = out[0,:,:INTERMEDIATE_LAYER_SIZE//4] ,out[0,:,INTERMEDIATE_LAYER_SIZE//4:]
+			out = self.attention(torch.cat((in_src, addr, hidden), dim=1))
+			in_aggregated, addr, hidden = out[0,:,:INTERMEDIATE_LAYER_SIZE//4] ,out[0,:,INTERMEDIATE_LAYER_SIZE//4:INTERMEDIATE_LAYER_SIZE//2], out[0,:,INTERMEDIATE_LAYER_SIZE//2:]
 
 		return self.final_layer_4(F.relu(self.final_layer_3(F.relu(
 					self.final_layer_2(F.relu(self.final_layer_1(in_aggregated)))))))
