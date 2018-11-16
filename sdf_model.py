@@ -199,6 +199,7 @@ class SdfModel(nn.Module):
 			in_src = torch.einsum('bjv,bj->bv', (nodes_rep, dp))
 			out = self.attention(torch.cat((in_src, addr, hidden), dim=1))
 			in_aggregated, addr, hidden = out[:,:INTERMEDIATE_LAYER_SIZE//4] ,out[:,INTERMEDIATE_LAYER_SIZE//4:INTERMEDIATE_LAYER_SIZE//2], out[:,INTERMEDIATE_LAYER_SIZE//2:]
+			hidden = F.relu(hidden)
 
 		return self.final_layer_4(F.relu(self.final_layer_3(F.relu(
 					self.final_layer_2(F.relu(self.final_layer_1(in_aggregated)))))))
