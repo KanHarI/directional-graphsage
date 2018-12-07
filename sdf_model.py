@@ -154,7 +154,6 @@ class SdfModel(nn.Module):
 			NUM_LAYERS,
 			[atom_dim] + [INTERMEDIATE_LAYER_SIZE]*(NUM_LAYERS//2) + [INTERMEDIATE_LAYER_SIZE//2]*(NUM_LAYERS//2),
 			BATCH_SIZE,
-			MAX_MOLECULE_SIZE,
 			batchnorm=True)
 		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
 		self.node_to_addresses = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
