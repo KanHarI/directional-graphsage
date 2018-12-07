@@ -9,7 +9,7 @@ import copy
 
 
 class GraphSageLayer(nn.Module):
-    def __init__(self, input_dim, output_dim, representation_size, batch_size):
+    def __init__(self, input_dim, output_dim, representation_size):
         # input_dim: size of vector representation of incoming nodes
         # output_dim: size of node output dimension per node
         # representation_size: size of internal hidden layers
@@ -29,7 +29,6 @@ class GraphSageLayer(nn.Module):
         self.dst_representation = nn.Linear(input_dim, representation_size)
         self.node_self_rep = nn.Linear(input_dim, representation_size)
         self.node_update = nn.Linear(3*representation_size, output_dim)
-        self.batch_size = batch_size
 
     def cuda(self):
         self.src_representation = self.src_representation.cuda()
@@ -48,6 +47,10 @@ class GraphSageLayer(nn.Module):
         
         src_representation = self.src_representation(nodes_adj[0])
         conn = F.normalize(nodes_adj[1], dim=2)
+        print(nodes_adj[0].shape)
+        print(nodes_adj[1].shape)
+        print(src_representation.shape)
+        print(conn.shape)
         src_representation = torch.einsum('bjv,bij->biv', (src_representation, conn))
 
 
@@ -62,7 +65,10 @@ class GraphSageLayer(nn.Module):
         # dst_representation = F.relu(dst_representation)
 
         update_src = torch.cat((src_representation, node_id_rep, dst_representation), dim=2)
-        return F.relu(self.node_update(update_src))
+        print("us", update_src.shape)
+        res = F.relu(self.node_update(update_src))
+        print("r", res.shape)
+        return res
 
 
 class PyramidGraphSage(nn.Module):
@@ -103,7 +109,7 @@ class PyramidGraphSage(nn.Module):
     # I->L0->L1->L6->L7...
     # Effectively "training one layer at a time" continously
 
-    def __init__(self, num_layers, feature_sizes, batch_size, representation_sizes=None, batchnorm=False):
+    def __init__(self, num_layers, feature_sizes, representation_sizes=None):
         assert num_layers%2 == 0
         assert num_layers == len(feature_sizes)-1
         super().__init__()
@@ -113,28 +119,24 @@ class PyramidGraphSage(nn.Module):
             representation_sizes = feature_sizes[:-1]
         self.layers = []
         self.norm_layers = []
-        self.batch_size = batch_size
         for i in range(self.num_layers):
             if i < self.num_layers//2:
                 self.layers.append(GraphSageLayer(
                     feature_sizes[i],
                     feature_sizes[i+1],
-                    representation_sizes[i],
-                    batch_size))
+                    representation_sizes[i]))
             elif i == self.num_layers//2:
                 self.layers.append(GraphSageLayer(
                     feature_sizes[i]+feature_sizes[self.num_layers-i-1],
                     feature_sizes[i+1],
-                    representation_sizes[i],
-                    batch_size))
+                    representation_sizes[i]))
             else:
                 self.layers.append(GraphSageLayer(
                     feature_sizes[i]+feature_sizes[self.num_layers-i]+feature_sizes[self.num_layers-i-1],
                     feature_sizes[i+1],
-                    representation_sizes[i],
-                    batch_size))
-            if batchnorm:
-                self.norm_layers.append(nn.BatchNorm2d(1, momentum=0.01))
+                    representation_sizes[i]))
+            # if batchnorm:
+            #     self.norm_layers.append(nn.BatchNorm2d(1, momentum=0.01))
                 
 
     def cuda(self):
@@ -156,8 +158,5 @@ class PyramidGraphSage(nn.Module):
                 # Concatenate skip connection inputs for pyramid "downward slope"
                 fpass_graph = torch.cat((fpass_graph, stashed_results[self.num_layers-i], stashed_results[self.num_layers-i-1]), dim=2)
             fpass_graph = self.layers[i]((fpass_graph, adj))
-            if self.norm_layers:
-                fpass_graph = self.norm_layers[i](fpass_graph.view(-1,1,self.batch_size,self.feature_sizes[i+1]))
-                fpass_graph = fpass_graph.view(-1,self.batch_size,self.feature_sizes[i+1])
         return fpass_graph
 
