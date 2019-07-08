@@ -43,7 +43,7 @@ atom_dim = len(atoms) + 2 # +2 for mass delta and charge delta
 # atom_dim is 66
 
 MAX_MOLECULE_SIZE = 128
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 
 def mol_to_sparse(molecule):
 	nodes_idx = [(MAX_MOLECULE_SIZE-1, atom_dim-1)]
@@ -145,17 +145,14 @@ class MoleculeDataset:
 
 MINIBATCHES_PER_STEP = 1
 INTERMEDIATE_LAYER_SIZE = 40
-NUM_LAYERS = 20
+NUM_LAYERS = 40
 
 class SdfModel(nn.Module):
 	def __init__(self, iterations=3):
 		super().__init__()
 		self.network = model.PyramidGraphSage(
 			NUM_LAYERS,
-			[atom_dim] + [INTERMEDIATE_LAYER_SIZE]*(NUM_LAYERS//2) + [INTERMEDIATE_LAYER_SIZE//2]*(NUM_LAYERS//2),
-			BATCH_SIZE,
-			MAX_MOLECULE_SIZE,
-			batchnorm=True)
+			[atom_dim] + [INTERMEDIATE_LAYER_SIZE]*(NUM_LAYERS//2) + [INTERMEDIATE_LAYER_SIZE//2]*(NUM_LAYERS//2))
 		self.node_to_representations = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
 		self.node_to_addresses = nn.Linear(INTERMEDIATE_LAYER_SIZE//2, INTERMEDIATE_LAYER_SIZE//4)
 		self.attention = nn.Linear(3*INTERMEDIATE_LAYER_SIZE//4, 3*INTERMEDIATE_LAYER_SIZE//4)
